@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    { "name": "Pico Debug",
+      "device": "RP2040_M0_0",
+      "gdbPath": "arm-none-eabi-gdb",
+      "cwd": "${workspaceRoot}",
+      "executable": "${command:cmake.launchTargetPath}",
+      "request": "launch",
+      "type": "cortex-debug",
+      "serverpath": "/Applications/SEGGER/JLink/JLinkGDBServerCLExe",
+      "servertype": "jlink",
+      "interface": "swd",
+      "configFiles": [
+        "/interface/picoprobe.cfg",
+        "/target/rp2040.cfg"
+      ],
+      "svdFile": "${env:PICO_SDK_PATH}/src/rp2040/hardware_regs/rp2040.svd",
+      "runToMain": true,
+      "postRestartCommands": [
+        "break main",
+        "continue"
+      ]
+    }
+  ]
+ }
+ 
+
