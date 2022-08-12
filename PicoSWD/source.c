@@ -919,12 +919,14 @@ bool sendhelper( void )
     probe_write_ap(ahbap_rw_TAR, DHCSR); // Debug Halting Control and Status Register
     probe_write_ap(ahbap_rw_DRW, 0xA05F0003); // set debug enable and halt CPU.
 
-    uint8_t data[sizeof _Users_visa_Code_pico_wipe_build_wipe_bin] = {0};
-    printf("Send helper %dB\n", sizeof _Users_visa_Code_pico_wipe_build_wipe_bin);
-    probe_write_memory(0x20000000, _Users_visa_Code_pico_wipe_build_wipe_bin, sizeof _Users_visa_Code_pico_wipe_build_wipe_bin);
-    printf("Check helper %dB\n", sizeof _Users_visa_Code_pico_wipe_build_wipe_bin);
-    probe_read_memory( 0x20000000, data, sizeof _Users_visa_Code_pico_wipe_build_wipe_bin);
-    printf("Verify written memory: %d\n", memcmp(_Users_visa_Code_pico_wipe_build_wipe_bin, data, sizeof _Users_visa_Code_pico_wipe_build_wipe_bin));
+    uint8_t data[sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin] = {0};
+    printf("Send helper %dB\n", sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin);
+    uint32_t start = time_us_32();
+    probe_write_memory(0x20000000, _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin);
+    printf("Send took %dms, Checking helper %dB\n", (time_us_32() - start)/1000, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin);
+    start = time_us_32();
+    probe_read_memory( 0x20000000, data, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin);
+    printf("Read too %dms, Verify written memory: %d\n", (time_us_32() - start)/1000, memcmp(_Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, data, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin));
 
     bool waiting = true;
     uint32_t magiccheck = 0;
@@ -950,17 +952,20 @@ bool sendhelper( void )
 
     printf("Waiting magic\n");
 
-    uint32_t count = 0;
-
-    while ( count < 10 )
+    start = time_us_32();
+    do
     {
         magiccheck = 0;
         probe_read_memory( 0x20038000, (uint8_t*)&magiccheck, sizeof magiccheck);
-        printf("Got magic: %08x\n", magiccheck);
-        if ( magiccheck == magic ) 
+        if ( magiccheck == magic )
+        {
+            printf("Got magic: %08x\n", magiccheck);
             return true;
+        }
         sleep_ms(100);
-    }
+    } while ( time_us_32() - start < 1000*1000 );
+
+    printf("Timeout waiting for magic.\n");
 
     return false;
 
@@ -1007,23 +1012,46 @@ write	AccessPort	DRW	0xBB	0xA05F0001
 }
 
 
-int32_t probe_send_insruction( uint8_t instruction )
+int32_t probe_send_instruction( uint8_t instruction )
 {
     // check current instruction field is 0, signifying 
     uint8_t ins[4] = {instruction};
-    probe_write_memory(0x20038000+offsetof(shareddata_t, inst), ins, 4);
+    if ( probe_write_memory(0x20038000+offsetof(shareddata_t, inst), ins, 4) )
+        return true;
+    return false;
+    #if 0
+    uint32_t start = 0;
+    int32_t result = 0;
+    while ( result == 0 && count < 10)
+    {
+        sleep_ms(20);
+        probe_read_memory( 0x20038000+offsetof(shareddata_t, inst), (uint8_t*)&result, sizeof result);
+    }
+
+    return result;
+    #endif
     // wait until it's been read, should be near instant
 }
 
 
 int32_t probe_wait_reply( uint32_t timeout )
 {
-    uint32_t start = 0;
     int32_t result = 0;
-    while ( result == 0 )
+    timeout = timeout*1000;
+    uint32_t start = time_us_32();
+    while ( result == 0 && time_us_32()-start < timeout )
     {
         sleep_ms(20);
-        probe_read_memory( 0x20038000+offsetof(shareddata_t, res), (uint8_t*)&result, sizeof result);
+        if ( !probe_read_memory( 0x20038000+offsetof(shareddata_t, res), (uint8_t*)&result, sizeof result) )
+        {
+            printf("error reading address %08x\n", offsetof(shareddata_t, res));
+            break;
+        }
+    }
+
+    if ( result == 0 )
+    {
+        printf("reply timeout\n");
     }
 
     return result;
@@ -1098,7 +1126,7 @@ int main() {
     bool connected = false;
     bool filesystem = false;
 
-    printf("Enter Command ( connect to start ):\n");
+    printf("Enter Command (connect to start) :\n");
 
 	uint8_t charcount = 0;
     char str[61] = { 0 };
@@ -1256,18 +1284,17 @@ int main() {
                 if ( streql(tkn1, "blink" ) )
                 {
                     printf("Blink\n");
-                    uint8_t blink[4] = {0xff};
-                    probe_write_memory(0x20038000+offsetof(shareddata_t, inst), blink, 4);
-
-                    probe_wait_reply(1000);
+                    probe_send_instruction(0xff);
+                    
 
                 } else if ( streql(tkn1, "boot" ) )
                 {
                     if ( filesystem )
                     {
                         printf("boot.py recovery\n");
-                        uint8_t boot[4] = {0x1};
-                        probe_write_memory(0x20038000+offsetof(shareddata_t, inst), boot, 4);
+                        probe_send_instruction(1);
+                        int32_t res = probe_wait_reply(5000);
+                        printf("result %d\n", res);
                     } else
                     {
                        printf("boot: no file system found\n"); 
@@ -1277,8 +1304,9 @@ int main() {
                     if ( filesystem )
                     {
                         printf("main.py recovery\n");
-                        uint8_t main[4] = {0x2};
-                        probe_write_memory(0x20038000+offsetof(shareddata_t, inst), main, 4);
+                        probe_send_instruction(2);
+                        int32_t res = probe_wait_reply(5000);
+                        printf("result %d\n", res);
                     } else
                     {
                        printf("main: no file system found\n"); 
@@ -1288,8 +1316,7 @@ int main() {
                     if ( filesystem )
                     {
                         printf("files\n");
-                        uint8_t files[4] = {0x3};
-                        probe_write_memory(0x20038000+offsetof(shareddata_t, inst), files, 4);
+                        probe_send_instruction(3);
                     } else
                     {
                        printf("wipefiles: no file system found\n"); 
@@ -1297,9 +1324,7 @@ int main() {
                 } else if ( streql(tkn1, "usb" ) )
                 {
                     printf("usb load requested\n");
-                    uint8_t usb[4] = {0x4};
-                    probe_write_memory(0x20038000+offsetof(shareddata_t, inst), usb, 4);
-
+                    probe_send_instruction(4);
                     connected = false;
                 } else 
                 {
@@ -1339,11 +1364,23 @@ int main() {
                     gpio_put(LED_PIN, 0);
                     sleep_ms(200);
                     gpio_put(LED_PIN, 1);
-                } else
+                } else if ( streql(tkn1, "count" ) )
+                {
+                    int32_t result = 0;
+                    probe_read_memory( 0x20038000+offsetof(shareddata_t, count), (uint8_t*)&result, sizeof result);
+                    printf("Count %d at %08x\n", result, 0x20038000+offsetof(shareddata_t, count));
+                } else if ( streql(tkn1, "data" ) )
+                {
+                    int32_t result = 0;
+                    probe_read_memory( 0x20038000+offsetof(shareddata_t, data), (uint8_t*)&result, sizeof result);
+                    printf("data %d at %08x\n", result, 0x20038000+offsetof(shareddata_t, count));
+                }
+                else
                 {
                     processed = false;
                 }
             }
+            
             
             if ( !processed )
             {
@@ -1352,7 +1389,7 @@ int main() {
 
             charcount = 0;
 			str[0] = 0;
-            printf("(%s)Enter Command:\n", connected?"connected":"disconnected");
+            printf("Enter Command (%s) :\n", connected?"connected":"disconnected");
         }
     }
 #endif

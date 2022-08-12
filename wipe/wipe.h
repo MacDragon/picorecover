@@ -9,6 +9,7 @@ typedef struct shareddata {
     uint32_t rdy;
     uint32_t addr;
     uint32_t crc32;
+    uint32_t count;
     uint32_t data[1024];
 } shareddata_t;
 

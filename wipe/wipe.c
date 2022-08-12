@@ -78,13 +78,27 @@ static void flash_start( void )
 
 shareddata_t exchange __attribute__((section(".shared")));
 
-bool recoverboot( void )
+int recoverfile( char * filename )
 {
-    int file = pico_open("/boot.py", 0);
-    int file2 = pico_open("/boot_recover.py", 0);
+    int res = 0;
+    char filename1[32]="/boot.py";
+    char filename2[32]="/boot_recover.py";
 
-    pico_close(file); // only used to check if recovery exists.
-    pico_close(file2);
+    for ( int i=0;i<4;i++)
+    {
+        filename1[i+1] = filename[i];
+        filename2[i+1] = filename[i];
+    }
+
+    int file = pico_open(filename1, 0);
+    int file2 = pico_open(filename2, 0);
+
+    exchange.data[1] = file;
+    exchange.data[2] = file2;
+
+    if ( file > 0 ) pico_close(file); // only used to check if recovery exists.
+
+    if ( file2 > 0 ) pico_close(file2);
 
     bool delete = false;
 
@@ -96,56 +110,29 @@ bool recoverboot( void )
         if ( file2 < 0 )
         {
            // printf("boot.py found but no boot_recover, renaming\n");
-            if( pico_rename("/boot.py", "/boot_recover.py") < 0 )
+            if( pico_rename(filename1, filename2) < 0 )
             {
                // printf("boot.py couldn't be renamed, deleting\n");
                 delete = true;
                 // rename failed, just delete the file instead.
-            } //else
+            } else
+                res = 1;
+            //else
               //  printf("boot.py renamed to boot_recover.py\n");
         }
 
         if ( delete )
-            pico_remove("/boot.py");
-
-    } //else
-        //  printf("boot.py not found %d\n", file);
-}
-
-bool recovermain( void )
-{
-    int file = pico_open("/main.py", 0);
-    int file2 = pico_open("/main_recover.py", 0);
-
-    pico_close(file); // only used to check if recovery exists.
-    pico_close(file2);
-
-    bool delete = false;
-
-    if ( file2 > 0 )
-        delete = true;
-
-    if ( file > 0 )
-    {
-        if ( file2 < 0 )
         {
-        //    printf("main.py found but no main_recover, renaming\n");
-            if( pico_rename("/main.py", "/main_recover.py") < 0 )
-            {
-          //      printf("main.py couldn't be renamed, deleting\n");
-                delete = true;
-                // rename failed, just delete the file instead.
-            } //else
-            //    printf("main.py renamed to main_recover.py\n");
+            if ( pico_remove(filename1) < 0 )
+                res = -1;
+            else
+                res = 2;
         }
-
-        if ( delete )
-            pico_remove("/main.py");
-
-    } //else
-      //    printf("main.py not found %d\n", file);
-
-    return true;
+    } else
+        res = -2; 
+    //else
+        //  printf("boot.py not found %d\n", file);
+    return res;
 }
 
 void flasherror( void )
@@ -163,7 +150,13 @@ int main() {
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
 
+    flasherror();
+
     flash_start();
+
+    exchange.magic = 0;
+
+    memset(exchange.data, 0, sizeof exchange.data);
 
     // check for and run boot2 if it exists in flash?
 
@@ -174,6 +167,7 @@ int main() {
     // W25Q16JV
 
     exchange.inst = 0;
+    exchange.count = 0;
 
     bool filesystemok = false;
 
@@ -181,7 +175,7 @@ int main() {
 
     if ( res == LFS_ERR_OK)
     {
-        exchange.res = 0xABCD; // flag that filesystem was found.
+        exchange.res = 0xabcd; // flag that filesystem was found.
         filesystemok = true;
     } else
     {
@@ -197,6 +191,7 @@ int main() {
 
     while ( 1 )
     {
+        exchange.count++;
         if ( exchange.inst != 0 )
         {
             uint32_t current_inst = exchange.inst;
@@ -211,7 +206,7 @@ int main() {
                         flasherror();
                         exchange.res = -1; 
                     } else
-                        exchange.res = recoverboot();
+                        exchange.res = recoverfile("boot");
                     break;
                 case 2 : // main.py recover
                     if ( !filesystemok )
@@ -219,7 +214,7 @@ int main() {
                         flasherror();
                         exchange.res = -1; 
                     } else
-                        exchange.res = recovermain();
+                        exchange.res = recoverfile("main");
                     break;
                     break;
                 case 3 : // wipe filesystem area
