@@ -10,7 +10,8 @@
         "mutex.h": "c",
         "sync.h": "c",
         "pico_hal.h": "c",
-        "flash.h": "c"
+        "flash.h": "c",
+        "wipe.h": "c"
     }
 }
 

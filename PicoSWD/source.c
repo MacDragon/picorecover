@@ -1,9 +1,11 @@
 #include <string.h>
+#include <ctype.h>
 #include "source.h"
 #include "SEGGER_RTT.h"
 #include "hardware/structs/systick.h"
-#include "wipe.h"
+#include "helper.h"
 #include "pico_hal.h"
+#include "../wipe/wipe.h"
 //#include "picoprobe_config.h"
 //#include "probe.h"
 
@@ -803,13 +805,6 @@ bool probe_read_memory( uint32_t addr, uint8_t *data, uint32_t count)
 
 }
 
-typedef struct shareddata {
-    uint32_t magic;
-    uint32_t inst;
-    uint32_t res;
-    uint32_t data[1024];
-} shareddata_t;
-
 void dump_dir(void) {
 	// display each directory entry name
 	printf("File list\n");
@@ -1011,6 +1006,34 @@ write	AccessPort	DRW	0xBB	0xA05F0001
 
 }
 
+
+int32_t probe_send_insruction( uint8_t instruction )
+{
+    // check current instruction field is 0, signifying 
+    uint8_t ins[4] = {instruction};
+    probe_write_memory(0x20038000+offsetof(shareddata_t, inst), ins, 4);
+    // wait until it's been read, should be near instant
+}
+
+
+int32_t probe_wait_reply( uint32_t timeout )
+{
+    uint32_t start = 0;
+    int32_t result = 0;
+    while ( result == 0 )
+    {
+        sleep_ms(20);
+        probe_read_memory( 0x20038000+offsetof(shareddata_t, res), (uint8_t*)&result, sizeof result);
+    }
+
+    return result;
+}
+
+bool streql( const char * str1, const char * str2 )
+{
+	return ! ( strcmp(str1, str2) );
+}
+
 int main() {
 #ifndef PICO_DEFAULT_LED_PIN
 #warning blink example requires a board with a regular LED
@@ -1027,7 +1050,6 @@ int main() {
     {
         printf("Error mounting FS, deleting file system area instead.\n");
     }
-
 
     printf("FS mounted\n");
 #endif
@@ -1056,23 +1078,10 @@ int main() {
 
     volatile uint32_t rtt = (uint32_t) &_SEGGER_RTT;
     volatile uint32_t rttsize = sizeof _SEGGER_RTT;
-    sleep_ms(1000);
 
-    printf("Wake pico to rescue core\n");
+    gpio_put(LED_PIN, 1);
 
-    probe_rescue_reset();
-
-    if ( sendhelper() )
-    {
-        int32_t result = 0;
-        probe_read_memory( 0x20038008, (uint8_t*)&result, sizeof result);
-                printf("Helper uploaded, checking state: %d", result);
-        if ( result == 0xabcd )
-            printf("Filesystem found\n");
-        else
-            printf("No filesystem\n");
-    }
-
+#if 0
     uint8_t eraseboot[4] = {5};
     probe_write_memory(0x20038004, eraseboot, 4);
 
@@ -1082,17 +1091,269 @@ int main() {
         sleep_ms(20);
         probe_read_memory( 0x20038008, (uint8_t*)&result, sizeof result);
     }
-
     printf("Boot block erased, sending blink command\n");
-    while (true)
+
+#endif
+
+    bool connected = false;
+    bool filesystem = false;
+
+    printf("Enter Command ( connect to start ):\n");
+
+	uint8_t charcount = 0;
+    char str[61] = { 0 };
+
+    while ( true )
     {
-        gpio_put(LED_PIN, 1);
-        sleep_ms(250);
-        gpio_put(LED_PIN, 0);
-        sleep_ms(500);
-        uint8_t blink[4] = {0xff};
-        probe_write_memory(0x20038004, blink, 4);
-        sleep_ms(2000);
+        int read;
+        bool endline = false;
+        read = SEGGER_RTT_GetKey();
+
+		if ( read == 0 )
+		{
+			continue; // nothing to do this loop, return to start.
+		}
+
+		if ( read == 8 || read == 127)
+		{
+			if ( charcount > 0 )
+			{
+				--charcount;
+				str[charcount] = 0;
+				str[charcount+1] = 0;
+			}
+		} else
+		if ( !( read == '\n' || read == '\r') )
+		{
+			if ( read >= 32 && read <= 128) // only process printable charecters.
+			{
+				str[charcount] = read;
+				str[charcount+1] = 0;
+				printf("%c", read);
+				++charcount;
+			}
+		} else
+		{
+			endline = true;
+			printf("\r\n");
+		}
+
+#define TOKENLENGTH   12
+
+		if ( charcount == 60 || endline )
+		{
+            // lowercase the input string.
+            for ( int i=0;str[i];i++)
+                str[i]=tolower(str[i]);
+
+            char tkn1[TOKENLENGTH] = "";
+            char tkn2[TOKENLENGTH] = "";
+            char tkn3[TOKENLENGTH] = "";
+            char tkn4[TOKENLENGTH] = "";
+            char tkn5[TOKENLENGTH] = "";
+
+            uint8_t tokens = 0;
+
+            int val1;
+            int val2;
+            int val3;
+            int val4;
+
+            // parse the input string into tokens to be processed.
+
+            char *s=str;
+
+            if (*(s += strspn(s, " ")) != '\0') { // find the first non space, and move string pointer to it. Check if we have reached end of string.
+                size_t tknlen = strcspn(s, " ");  // if not at end of string, find the next space, getting the span of token.
+                if ( tknlen < TOKENLENGTH )
+                {
+                    strncpy(tkn1, s, tknlen);
+                    tkn1[tknlen] = '\0';
+
+                    s += tknlen;
+                    tokens++;
+                } else
+                {
+                    strncpy(tkn1, "too long", tknlen);
+                }
+            }
+
+            if (*(s += strspn(s, " ")) != '\0') {
+                size_t tknlen = strcspn(s, " ");
+                if ( tknlen < TOKENLENGTH )
+                {
+                    strncpy(tkn2, s, tknlen);
+                    tkn2[tknlen] = '\0';
+
+                    s += tknlen;
+                    tokens++;
+                }
+            }
+
+            if ( strlen(tkn2) >0 )
+            {
+                val1 = strtol(tkn2, NULL, 10);
+            } else val1 = 0;
+
+
+            if (*(s += strspn(s, " ")) != '\0') {
+                size_t tknlen = strcspn(s, " ");
+                if ( tknlen < TOKENLENGTH )
+                {
+                    strncpy(tkn3, s, tknlen);
+                    tkn3[tknlen] = '\0';
+                    s += tknlen;
+                    tokens++;
+                }
+            }
+
+            if ( strlen(tkn3)>0 )
+            {
+                val2 = strtol(tkn3, NULL, 10);
+            } else val2 = 0;
+
+            if (*(s += strspn(s, " ")) != '\0') {
+                size_t tknlen = strcspn(s, " ");
+                if ( tknlen < TOKENLENGTH )
+                {
+                    strncpy(tkn4, s, tknlen);
+                    tkn4[tknlen] = '\0';
+                    s += tknlen;
+                    tokens++;
+                }
+            }
+
+            if ( strlen(tkn4)>0 )
+            {
+                val3 = strtol(tkn4, NULL, 10);
+            } else val3 = 0;
+
+
+            if (*(s += strspn(s, " ")) != '\0') {
+                size_t tknlen = strcspn(s, " ");
+                if ( tknlen < TOKENLENGTH )
+                {
+                    strncpy(tkn5, s, tknlen);
+                    tkn5[tknlen] = '\0';
+                    tokens++;
+                }
+            }
+
+            if ( strlen(tkn5)>0 )
+            {
+                val4 = strtol(tkn5, NULL, 10);
+            } else val4 = 0;
+
+            gpio_put(LED_PIN, 0);
+            sleep_ms(250);
+            gpio_put(LED_PIN, 1);
+
+            bool processed = false;
+
+            if ( connected )
+            {
+                processed = true;
+                if ( streql(tkn1, "blink" ) )
+                {
+                    printf("Blink\n");
+                    uint8_t blink[4] = {0xff};
+                    probe_write_memory(0x20038000+offsetof(shareddata_t, inst), blink, 4);
+
+                    probe_wait_reply(1000);
+
+                } else if ( streql(tkn1, "boot" ) )
+                {
+                    if ( filesystem )
+                    {
+                        printf("boot.py recovery\n");
+                        uint8_t boot[4] = {0x1};
+                        probe_write_memory(0x20038000+offsetof(shareddata_t, inst), boot, 4);
+                    } else
+                    {
+                       printf("boot: no file system found\n"); 
+                    }
+                } else if ( streql(tkn1, "main" ) )
+                {                    
+                    if ( filesystem )
+                    {
+                        printf("main.py recovery\n");
+                        uint8_t main[4] = {0x2};
+                        probe_write_memory(0x20038000+offsetof(shareddata_t, inst), main, 4);
+                    } else
+                    {
+                       printf("main: no file system found\n"); 
+                    }
+                } else if ( streql(tkn1, "wipefiles" ) )
+                {
+                    if ( filesystem )
+                    {
+                        printf("files\n");
+                        uint8_t files[4] = {0x3};
+                        probe_write_memory(0x20038000+offsetof(shareddata_t, inst), files, 4);
+                    } else
+                    {
+                       printf("wipefiles: no file system found\n"); 
+                    }
+                } else if ( streql(tkn1, "usb" ) )
+                {
+                    printf("usb load requested\n");
+                    uint8_t usb[4] = {0x4};
+                    probe_write_memory(0x20038000+offsetof(shareddata_t, inst), usb, 4);
+
+                    connected = false;
+                } else 
+                {
+                    processed = false;
+                }
+            }
+
+            if ( !processed ) // command not yet processed, check all state commands.
+            {
+                processed = true;
+                if ( streql(tkn1, "connect" ) )
+                {
+                    printf("Connecting to pico:\n");
+
+                    printf("Wake pico to rescue core\n");
+                    probe_rescue_reset();
+
+                    if ( sendhelper() )
+                    {
+                        int32_t result = 0;
+                        probe_read_memory( 0x20038000+offsetof(shareddata_t, res), (uint8_t*)&result, sizeof result);
+                                printf("Helper uploaded, checking state: %08x -> ", result);
+                        if ( result == 0xabcd )
+                        {
+                            printf("Filesystem found\n");
+                            filesystem = true;
+                        }
+                        else
+                        {
+                            printf("No filesystem\n");
+                            filesystem = false;
+                        }
+                        connected = true;
+                    } else
+                        connected = false;
+
+                    gpio_put(LED_PIN, 0);
+                    sleep_ms(200);
+                    gpio_put(LED_PIN, 1);
+                } else
+                {
+                    processed = false;
+                }
+            }
+            
+            if ( !processed )
+            {
+                printf("Got unavailable command: %s\n", str);
+            }
+
+            charcount = 0;
+			str[0] = 0;
+            printf("(%s)Enter Command:\n", connected?"connected":"disconnected");
+        }
     }
 #endif
 }

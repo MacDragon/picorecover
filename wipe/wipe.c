@@ -40,6 +40,7 @@
 #include "hardware/flash.h"
 #include "pico/bootrom.h"
 #include "pico_hal.h"
+#include "wipe.h"
 
 #include "boot2.h"
 
@@ -74,17 +75,6 @@ static void flash_start( void )
     flash_enter_cmd_xip();
 }
 #endif
-
-
-
-typedef struct shareddata {
-    uint32_t magic;
-    uint32_t inst;
-    int32_t res;
-    uint32_t addr;
-    uint32_t crc32;
-    uint32_t data[1024];
-} shareddata_t;
 
 shareddata_t exchange __attribute__((section(".shared")));
 
@@ -201,7 +191,9 @@ int main() {
 
     gpio_put(PICO_DEFAULT_LED_PIN, 1);
 
-    exchange.magic = 0xDEADBEEF;
+    exchange.magic = BOOTMAGIC;
+
+    exchange.rdy = 1;
 
     while ( 1 )
     {
@@ -222,6 +214,13 @@ int main() {
                         exchange.res = recoverboot();
                     break;
                 case 2 : // main.py recover
+                    if ( !filesystemok )
+                    {
+                        flasherror();
+                        exchange.res = -1; 
+                    } else
+                        exchange.res = recovermain();
+                    break;
                     break;
                 case 3 : // wipe filesystem area
                     uint flash_size_bytes;
@@ -247,6 +246,7 @@ int main() {
                     sleep_ms(100);
                     break;
             }
+            exchange.rdy = 1;
         }
     }
 }

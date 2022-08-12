@@ -12,6 +12,8 @@ add_executable(PicoSWD source.c led.c)
  
 add_subdirectory(littlefs-lib)
 
+target_include_directories(PicoSWD PRIVATE ${../../wipe/})
+
 # Link the Project to an extra library (pico_stdlib)
 target_link_libraries(PicoSWD pico_stdlib hardware_pio littlefs-lib)
 
