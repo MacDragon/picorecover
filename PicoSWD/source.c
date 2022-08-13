@@ -23,6 +23,24 @@ const
 #define CYCLES1 3
 #define CYCLES2 1
 
+uint32_t crc32b(unsigned char *data, uint32_t size) {
+   int i, j;
+   unsigned int byte, crc, mask;
+
+   i = 0;
+   crc = 0xFFFFFFFF;
+   while (i < size) {
+      byte = data[i];            // Get next byte.
+      crc = crc ^ byte;
+      for (j = 7; j >= 0; j--) {    // Do eight times.
+         mask = -(crc & 1);
+         crc = (crc >> 1) ^ (0xEDB88320 & mask);
+      }
+      i = i + 1;
+   }
+   return ~crc;
+}
+
 inline void cycledelay(int cycles)
 {
     for ( int i=0;i<cycles;i++)
@@ -1281,7 +1299,24 @@ int main() {
             if ( connected )
             {
                 processed = true;
-                if ( streql(tkn1, "blink" ) )
+                if ( streql(tkn1, "send" ) )
+                {
+                    uint32_t sendsize = 311;
+                    uint32_t crc32 = crc32b(_Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sendsize);
+                    printf("Data send %dB crc32 %08x\n", sendsize, crc32);
+                    probe_write_memory(0x20038000+offsetof(shareddata_t, data), _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sendsize);
+                    probe_write_memory(0x20038000+offsetof(shareddata_t, size), (uint8_t*)&sendsize, 4);
+                    probe_write_memory(0x20038000+offsetof(shareddata_t, crc32), (uint8_t*)&crc32, 4);
+                    probe_send_instruction(6);
+                    int32_t res = probe_wait_reply(1000);
+                    int32_t crc32read = 0;
+                    probe_read_memory( 0x20038000+offsetof(shareddata_t, crc32), (uint8_t*)&crc32read, sizeof crc32read);
+                    crc32read = ~crc32read;
+                    if ( res == 1 && crc32read == crc32 )
+                        printf("data sent ok\n");
+                    else
+                        printf("data send error\n");
+                } else if ( streql(tkn1, "blink" ) )
                 {
                     printf("Blink\n");
                     probe_send_instruction(0xff);
@@ -1346,7 +1381,7 @@ int main() {
                     {
                         int32_t result = 0;
                         probe_read_memory( 0x20038000+offsetof(shareddata_t, res), (uint8_t*)&result, sizeof result);
-                                printf("Helper uploaded, checking state: %08x -> ", result);
+                        printf("Helper uploaded, checking state: %08x -> ", result);
                         if ( result == 0xabcd )
                         {
                             printf("Filesystem found\n");
@@ -1364,16 +1399,11 @@ int main() {
                     gpio_put(LED_PIN, 0);
                     sleep_ms(200);
                     gpio_put(LED_PIN, 1);
-                } else if ( streql(tkn1, "count" ) )
-                {
-                    int32_t result = 0;
-                    probe_read_memory( 0x20038000+offsetof(shareddata_t, count), (uint8_t*)&result, sizeof result);
-                    printf("Count %d at %08x\n", result, 0x20038000+offsetof(shareddata_t, count));
                 } else if ( streql(tkn1, "data" ) )
                 {
                     int32_t result = 0;
                     probe_read_memory( 0x20038000+offsetof(shareddata_t, data), (uint8_t*)&result, sizeof result);
-                    printf("data %d at %08x\n", result, 0x20038000+offsetof(shareddata_t, count));
+                    printf("data %d at %08x\n", result, 0x20038000+offsetof(shareddata_t, data));
                 }
                 else
                 {

@@ -35,7 +35,6 @@
 
 //#include "stdio.h"
 
-
 #include "pico/stdlib.h"
 #include "hardware/flash.h"
 #include "pico/bootrom.h"
@@ -43,6 +42,40 @@
 #include "wipe.h"
 
 #include "boot2.h"
+
+
+// https://web.archive.org/web/20190108202303/http://www.hackersdelight.org/hdcodetxt/crc.c.txt
+
+// ----------------------------- crc32b --------------------------------
+
+/* This is the basic CRC-32 calculation with some optimization but no
+table lookup. The the byte reversal is avoided by shifting the crc reg
+right instead of left and by using a reversed 32-bit word to represent
+the polynomial.
+   When compiled to Cyclops with GCC, this function executes in 8 + 72n
+instructions, where n is the number of bytes in the input message. It
+should be doable in 4 + 61n instructions.
+   If the inner loop is strung out (approx. 5*8 = 40 instructions),
+it would take about 6 + 46n instructions. */
+
+uint32_t crc32b(unsigned char *data, uint32_t size) {
+   int i, j;
+   unsigned int byte, crc, mask;
+
+   i = 0;
+   crc = 0xFFFFFFFF;
+   while (i < size) {
+      byte = data[i];            // Get next byte.
+      crc = crc ^ byte;
+      for (j = 7; j >= 0; j--) {    // Do eight times.
+         mask = -(crc & 1);
+         crc = (crc >> 1) ^ (0xEDB88320 & mask);
+      }
+      i = i + 1;
+   }
+   return ~crc;
+}
+
 
 // from micropython rp2 port
 #define BLOCK_SIZE_BYTES (FLASH_SECTOR_SIZE)
@@ -167,7 +200,6 @@ int main() {
     // W25Q16JV
 
     exchange.inst = 0;
-    exchange.count = 0;
 
     bool filesystemok = false;
 
@@ -187,11 +219,8 @@ int main() {
 
     exchange.magic = BOOTMAGIC;
 
-    exchange.rdy = 1;
-
     while ( 1 )
     {
-        exchange.count++;
         if ( exchange.inst != 0 )
         {
             uint32_t current_inst = exchange.inst;
@@ -234,6 +263,26 @@ int main() {
                 case 5 :
                     flash_range_erase(0, 4096); // erase boot sector only.
                     exchange.res = 1;
+                    break;
+                case 6 :
+                    // receive data.
+                    if ( exchange.size > 1024 || exchange.size == 0 )
+                        exchange.res = -2;
+                    else 
+                    {
+                        uint32_t crc32 = crc32b(exchange.data, exchange.size);
+                        if ( crc32 == exchange.crc32 )
+                        {
+                            exchange.crc32 = ~crc32;
+                            exchange.res = 1;
+                        }
+                        else
+                        {
+                            exchange.crc32 = ~crc32;
+                            exchange.res = -1;
+                        }
+                    }
+                    break;
                 case 0xff :
                     gpio_put(PICO_DEFAULT_LED_PIN, 0);
                     sleep_ms(100);
@@ -241,7 +290,6 @@ int main() {
                     sleep_ms(100);
                     break;
             }
-            exchange.rdy = 1;
         }
     }
 }
