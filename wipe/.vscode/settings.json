@@ -10,7 +10,8 @@
         "bootrom.h": "c",
         "lfs_util.h": "c",
         "flash.h": "c",
-        "wipe.h": "c"
+        "wipe.h": "c",
+        "stdlib.h": "c"
     }
 }
 

@@ -32,4 +32,3 @@ target_compile_definitions(hardware_timer INTERFACE PICO_TIME_DEFAULT_ALARM_POOL
 
 
 
-

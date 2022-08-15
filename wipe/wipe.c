@@ -21,15 +21,11 @@
 #error "This example must be built to run from SRAM!"
 #endif
 
-#if PICO_NO_FLASH
 #include "pico/bootrom.h"
 #include "pico/stdlib.h"
 
 #include "hardware/structs/ioqspi.h"
 #include "hardware/structs/ssi.h"
-#else
-#include "hardware/flash.h"
-#endif
 
 //#include "pico/stdio.h"
 

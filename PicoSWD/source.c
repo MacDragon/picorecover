@@ -1381,7 +1381,7 @@ int main() {
                 }
             }
 
-            if ( connected )
+            if ( !processed && connected )
             {
                 processed = true;
                 if ( streql(tkn1, "boot" ) )
@@ -1390,7 +1390,7 @@ int main() {
                     {
                         printf("boot.py recovery\n");
                         probe_send_instruction(1);
-                        sleep_ms(20);
+                        //sleep_ms(20);
                         int32_t res = probe_wait_reply(5000);
                         printf("result %d\n", res);
                     } else
@@ -1403,7 +1403,7 @@ int main() {
                     {
                         printf("main.py recovery\n");
                         probe_send_instruction(2);
-                        sleep_ms(20);
+                        //sleep_ms(20);
                         int32_t res = probe_wait_reply(5000);
                         printf("result %d\n", res);
                     } else
@@ -1416,7 +1416,7 @@ int main() {
                     {
                         printf("clearing file area\n");
                         probe_send_instruction(3);
-                        sleep_ms(20);
+                        //sleep_ms(20);
                         int32_t res = probe_wait_reply(20000);
                         printf("result %d\n", res);
                     } else
