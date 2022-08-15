@@ -11,7 +11,14 @@
         "sync.h": "c",
         "pico_hal.h": "c",
         "flash.h": "c",
-        "wipe.h": "c"
+        "wipe.h": "c",
+        "uf2.h": "c",
+        "array": "c",
+        "string_view": "c",
+        "initializer_list": "c",
+        "ranges": "c",
+        "utility": "c",
+        "string": "c"
     }
 }
 

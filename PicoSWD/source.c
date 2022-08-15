@@ -20,7 +20,7 @@ const uint PROBE_SWDCLK = PROBE_PIN_SWCLK;
 const uint PROBE_SWDIO = PROBE_PIN_SWDIO;
 const uint PROBE_DIR = PROBE_PIN_DIR;
 
-const 
+#define PICOFAMILYID 0xe48bff56
 
 #define CYCLES1 1
 
@@ -41,6 +41,128 @@ uint32_t crc32b(unsigned char *data, uint32_t size) {
    }
    return ~crc;
 }
+
+
+
+//CRC-16 (Modbus) table
+
+//https://community.nxp.com/t5/Kinetis-Microcontrollers/Cortex-A-vs-Cortex-M-Differents-CRC-output-calculation/m-p/484486/highlight/true
+
+static short crc_tab16[256] =
+
+{
+
+        0x0000,0xC0C1,0xC181,0x0140,0xC301,0x03C0,0x0280,
+
+        0xC241,0xC601,0x06C0,0x0780,0xC741,0x0500,0xC5C1,
+
+        0xC481,0x0440,0xCC01,0x0CC0,0x0D80,0xCD41,0x0F00,
+
+        0xCFC1,0xCE81,0x0E40,0x0A00,0xCAC1,0xCB81,0x0B40,
+
+        0xC901,0x09C0,0x0880,0xC841,0xD801,0x18C0,0x1980,
+
+        0xD941,0x1B00,0xDBC1,0xDA81,0x1A40,0x1E00,0xDEC1,
+
+        0xDF81,0x1F40,0xDD01,0x1DC0,0x1C80,0xDC41,0x1400,
+
+        0xD4C1,0xD581,0x1540,0xD701,0x17C0,0x1680,0xD641,
+
+        0xD201,0x12C0,0x1380,0xD341,0x1100,0xD1C1,0xD081,
+
+        0x1040,0xF001,0x30C0,0x3180,0xF141,0x3300,0xF3C1,
+
+        0xF281,0x3240,0x3600,0xF6C1,0xF781,0x3740,0xF501,
+
+        0x35C0,0x3480,0xF441,0x3C00,0xFCC1,0xFD81,0x3D40,
+
+        0xFF01,0x3FC0,0x3E80,0xFE41,0xFA01,0x3AC0,0x3B80,
+
+        0xFB41,0x3900,0xF9C1,0xF881,0x3840,0x2800,0xE8C1,
+
+        0xE981,0x2940,0xEB01,0x2BC0,0x2A80,0xEA41,0xEE01,
+
+        0x2EC0,0x2F80,0xEF41,0x2D00,0xEDC1,0xEC81,0x2C40,
+
+        0xE401,0x24C0,0x2580,0xE541,0x2700,0xE7C1,0xE681,
+
+        0x2640,0x2200,0xE2C1,0xE381,0x2340,0xE101,0x21C0,
+
+        0x2080,0xE041,0xA001,0x60C0,0x6180,0xA141,0x6300,
+
+        0xA3C1,0xA281,0x6240,0x6600,0xA6C1,0xA781,0x6740,
+
+        0xA501,0x65C0,0x6480,0xA441,0x6C00,0xACC1,0xAD81,
+
+        0x6D40,0xAF01,0x6FC0,0x6E80,0xAE41,0xAA01,0x6AC0,
+
+        0x6B80,0xAB41,0x6900,0xA9C1,0xA881,0x6840,0x7800,
+
+        0xB8C1,0xB981,0x7940,0xBB01,0x7BC0,0x7A80,0xBA41,
+
+        0xBE01,0x7EC0,0x7F80,0xBF41,0x7D00,0xBDC1,0xBC81,
+
+        0x7C40,0xB401,0x74C0,0x7580,0xB541,0x7700,0xB7C1,
+
+        0xB681,0x7640,0x7200,0xB2C1,0xB381,0x7340,0xB101,
+
+        0x71C0,0x7080,0xB041,0x5000,0x90C1,0x9181,0x5140,
+
+        0x9301,0x53C0,0x5280,0x9241,0x9601,0x56C0,0x5780,
+
+        0x9741,0x5500,0x95C1,0x9481,0x5440,0x9C01,0x5CC0,
+
+        0x5D80,0x9D41,0x5F00,0x9FC1,0x9E81,0x5E40,0x5A00,
+
+        0x9AC1,0x9B81,0x5B40,0x9901,0x59C0,0x5880,0x9841,
+
+        0x8801,0x48C0,0x4980,0x8941,0x4B00,0x8BC1,0x8A81,
+
+        0x4A40,0x4E00,0x8EC1,0x8F81,0x4F40,0x8D01,0x4DC0,
+
+        0x4C80,0x8C41,0x4400,0x84C1,0x8581,0x4540,0x8701,
+
+        0x47C0,0x4680,0x8641,0x8201,0x42C0,0x4380,0x8341,
+
+        0x4100,0x81C1,0x8081,0x4040
+
+};
+
+
+unsigned short update_crc16( unsigned short crc, char c ) {
+
+  unsigned short tmp, short_c;
+
+  short_c = 0x00ff & (unsigned short) c;
+
+  tmp =  crc       ^ short_c;
+
+  crc = (crc >> 8) ^ crc_tab16[ tmp & 0xff ];
+
+  return crc;
+
+}
+
+unsigned short crc16(char* data, int len)
+
+{
+
+    unsigned short crc=0xFFFF;// crc_16_modbus;
+
+    int i;
+
+    for(i=0;i<len;i++)
+
+    {
+
+        crc = update_crc16(crc, data[i] );
+
+    }
+
+    return crc;
+
+}
+
 
 inline void cycledelay()
 {
@@ -176,12 +298,7 @@ const uint32_t dp_core0 = 0x01002927;  //  # ID to select core 0 and 1
 const uint32_t dp_core1 = 0x11002927;
 const uint32_t dp_rescue = 0xf1002927;
 
-#define E_OK 0
-#define E_SWD_PARITY 1
-#define E_SWD_WAIT 2
-#define E_SWD_FAULT 3
-#define E_SWD_SWDERR 4
-#define E_SWD_NOT_SUPPORTED 5
+typedef enum _resultcode { E_FAULT, E_OK, E_PARITY, E_WAIT } resultcode;
 
 typedef enum _AHBAPRegs
 {
@@ -299,7 +416,7 @@ typedef enum _REGISTERS
     DCRDR = 0xE000EDF8,
 } REGISTERS;
 
-bool probe_read_reg(bool dp, uint32_t reg, uint32_t * readval)
+resultcode probe_read_reg(bool dp, uint32_t reg, uint32_t * readval)
 {
     gpio_set_dir(PROBE_SWDIO, GPIO_OUT);
     gpio_put(PROBE_DIR, 0);
@@ -344,6 +461,12 @@ bool probe_read_reg(bool dp, uint32_t reg, uint32_t * readval)
     bool wait = probe_read();
     bool fault = probe_read();
 
+    if ( !ok && wait && !fault )
+    {
+        printf("wait\n");
+        return E_WAIT;
+    }
+
     if ( ok && !wait && !fault )
     {
         //probe_turn();
@@ -365,28 +488,28 @@ bool probe_read_reg(bool dp, uint32_t reg, uint32_t * readval)
         if (parity & 1)
         {
            printf("parity error\n"); 
-           return false;
+           return E_PARITY;
         }
 
         for ( int i=0;i<8;i++)
             probe_low();  // idle
-        return true;
+        return E_OK;
     } else
         printf("read error: %d %d %d\n", ok, wait, fault); 
-    return false;
+    return E_FAULT;
 }
 
 bool probe_read_dp(uint32_t reg, uint32_t * readval)
 {
-    return probe_read_reg(true, reg, readval);
+    return probe_read_reg(true, reg, readval) == E_OK?true:false;
 }
 
 bool probe_read_ap(uint32_t reg, uint32_t * readval)
 {
-    return probe_read_reg(false, reg, readval);
+    return probe_read_reg(false, reg, readval) == E_OK?true:false;
 }
 
-bool probe_write_reg(bool dp, uint32_t reg, uint32_t writeval)
+resultcode probe_write_reg(bool dp, uint32_t reg, uint32_t writeval)
 {
     gpio_set_dir(PROBE_SWDIO, GPIO_OUT);
     gpio_put(PROBE_DIR, 0);
@@ -431,6 +554,12 @@ bool probe_write_reg(bool dp, uint32_t reg, uint32_t writeval)
     bool wait = probe_read();
     bool fault = probe_read();
 
+    if ( !ok && wait && !fault )
+    {
+        printf("wait\n");
+        return E_WAIT;
+    }
+
     if ( ok && !wait && !fault )
     {
         gpio_set_dir(PROBE_SWDIO, GPIO_OUT);
@@ -455,20 +584,31 @@ bool probe_write_reg(bool dp, uint32_t reg, uint32_t writeval)
 
         for ( int i=0;i<8;i++)
             probe_low();  // idle
-        return true;
+        return E_OK;
     } else
         printf("error: %d %d %d\n", ok, wait, fault); 
-    return false;
+    return E_FAULT;
 }
 
 bool probe_write_dp(uint32_t reg, uint32_t writeval)
 {
-    return probe_write_reg(true, reg, writeval);
+    resultcode res;
+
+    res = probe_write_reg(true, reg, writeval);
+
+    if ( res == E_WAIT){
+        //probe_clear_error();
+        printf("Wait error on write, abort and resend");
+        probe_write_dp(swdpreg_wo_ABORT, 0x1E);
+        res = probe_write_reg(true, reg, writeval);
+    }
+
+    return res = E_OK?true:false;
 }
 
 bool probe_write_ap(uint32_t reg, uint32_t writeval)
 {
-    return probe_write_reg(false, reg, writeval);
+    return probe_write_reg(false, reg, writeval) == E_OK?true:false;
 }
 
 
@@ -583,7 +723,10 @@ bool initDebug( uint32_t core )
         }
 
         return probe_write_dp(swdpreg_wo_ABORT, 0x1E);
-    } 
+    }  else
+    {
+        printf("Init err\n");
+    }
 
     return false;
 }
@@ -601,6 +744,7 @@ bool probe_rescue_reset( void )
             printf("Written reset\n"); 
         } else
         {
+            printf("fail1\n"); 
             return false;
         }
 
@@ -610,6 +754,7 @@ bool probe_rescue_reset( void )
             printf("Read %08X\n", reg); 
         } else
         {
+            printf("fail2\n"); 
             return false; 
         }
 
@@ -618,12 +763,13 @@ bool probe_rescue_reset( void )
             printf("Written reset\n"); 
         } else
         {
+            printf("fail3\n"); 
             return false;
         }
 
         sleep_ms(5);
 
-                    // read it back to verify.
+        // read it back to verify.
         if ( probe_read_dp(swdpreg_rw_CSR, &reg) )
         {
             printf("Read %08X\n", reg); 
@@ -655,7 +801,11 @@ bool probe_write_memory( uint32_t addr, uint8_t *data, uint32_t count )
         if ( i % 256 == 0 )
         {
             //printf("TAR write at position %d to %08x\n", i, addr+i);
-            probe_write_ap(ahbap_rw_TAR, addr+i);
+            if (!probe_write_ap(ahbap_rw_TAR, addr+i))
+            {
+                printf("Write error at %d\n", i);
+                return false;
+            }
         }
         //reg = ((uint32_t*)data)[i];
         reg = 0;
@@ -668,10 +818,14 @@ bool probe_write_memory( uint32_t addr, uint8_t *data, uint32_t count )
             reg |= data[i+3] << 24;
 
         //printf("TAR write %08x, %02x %02x %02x %02x\n", reg, reg&0xff, (reg>>8)&0xff, (reg>>16)&0xff, (reg>>24)&0xff);
-        probe_write_ap(ahbap_rw_DRW,reg); // * 256 to program 1kB
+        if ( ! probe_write_ap(ahbap_rw_DRW,reg) ) // * 256 to program 1kB
+        {
+                printf("Write error 2 at %d\n", i);
+                return false;
+        }
     }
 
-
+    return true;
 }
 
 
@@ -681,21 +835,37 @@ bool probe_read_memory( uint32_t addr, uint8_t *data, uint32_t count)
     if ( addr & 0b11 )
     {
         printf("Bad address! %08x\n", addr);
+        return false;
     }
     uint32_t reg = 0;
     //probe_write_ap(ahbap_rw_TAR, addr);
     //probe_read_ap(ahbap_rw_DRW, &reg); //throw away read
-    for ( int i=0;i<count+4;i+=4) // need to execute one more read instruction than count indicates due to first result returning non defined
+    for ( int i=0;i<count;i+=4) // need to execute one more read instruction than count indicates due to first result returning non defined
     {
         if ( i % 256 == 0 )
         {
             //printf("TAR read at position %d to %08x\n", i, 0x20000000+i);
-            probe_write_ap(ahbap_rw_TAR, addr+i);
-            probe_read_ap(ahbap_rw_DRW, &reg); //throw away read
+            if ( ! probe_write_ap(ahbap_rw_TAR, addr+i) )
+            {
+                printf("Write error at %d\n", i);
+                return false;
+            }
+            if ( ! probe_read_ap(ahbap_rw_DRW, &reg) ) //throw away read
+            {
+                printf("Read error throwaway at %d\n", i);
+                return false;
+            }
             //printf("TAR throwaway read %02x %02x %02x %02x\n", reg&0xff, (reg>>8)&0xff, (reg>>16)&0xff, (reg>>24)&0xff);
         }
         reg = 0;
-        probe_read_ap(ahbap_rw_DRW, &reg); // * 256 to program 1kB
+        if ( !probe_read_ap(ahbap_rw_DRW, &reg) ) // * 256 to program 1kB
+        {
+            if ( ! probe_read_ap(ahbap_rw_DRW, &reg) ) //throw away read
+            {
+                printf("Read error at %d %08x\n", i, addr);
+                return false;
+            }  
+        }
         
         uint32_t writepos = i; // account for first read being garbage
         //printf("TAR read %02x %02x %02x %02x\n", reg&0xff, (reg>>8)&0xff, (reg>>16)&0xff, (reg>>24)&0xff);
@@ -710,7 +880,36 @@ bool probe_read_memory( uint32_t addr, uint8_t *data, uint32_t count)
         //printf("TAR read %08x\n", reg);
     }
 
+    return true;
 }
+
+bool probe_verify_memory( uint32_t addr, uint8_t *data, uint32_t count)
+{
+    uint8_t buffer[1024];
+    uint32_t read = 0;
+
+    while ( read < count ){
+        uint32_t readamount = 1024;
+        if ( read + 1024 > count )
+            readamount = count-read;
+
+        if (!probe_read_memory( addr+read, buffer, readamount) )
+        {
+            printf("verify read failed at %d\n", read);
+            return false;
+        }
+
+        if ( memcmp(buffer, &data[read], readamount) != 0 )
+        {
+            printf("verify check failed at %d %d\n", read, readamount);
+            return false;
+        }
+        read += readamount;
+    }
+
+    return true;
+}
+
 
 void dump_dir(void) {
 	// display each directory entry name
@@ -816,32 +1015,52 @@ bool sendhelper( void )
         printf("CSR ok\n");
     }
 
-    probe_write_ap(ahbap_rw_CSW, 
+    if ( ! probe_write_ap(ahbap_rw_CSW, 
                       ( APSIZE32BIT << MEMAPSIZE )
                     | ( ADDRINCSINGLEEN << ADDRINC )  
                     | ( 1 << APDEVICEEN )
                     | ( 0b0100010 << APPROT )
-                    | ( 1 << DBGSWENABLE) );
+                    | ( 1 << DBGSWENABLE) ) )
+    {
+       printf("Setup error 1\n"); 
+    }
 
-    probe_write_ap(ahbap_rw_TAR, DHCSR); // Debug Halting Control and Status Register
-    probe_write_ap(ahbap_rw_DRW, 0xA05F0003); // set debug enable and halt CPU.
+    if ( ! probe_write_ap(ahbap_rw_TAR, DHCSR) ) // Debug Halting Control and Status Register
+    {
+        printf("Setup error 2\n");
+    }
+    if (! probe_write_ap(ahbap_rw_DRW, 0xA05F0003) ) // set debug enable and halt CPU.
+    {
+        printf("Setup error 3\n");
+    }
 
-    uint8_t data[sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin] = {0};
     printf("Send helper %dB\n", sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin);
     uint32_t start = time_us_32();
     probe_write_memory(0x20000000, _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin);
     printf("Send took %dms, Checking helper %dB\n", (time_us_32() - start)/1000, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin);
     start = time_us_32();
-    probe_read_memory( 0x20000000, data, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin);
-    printf("Read too %dms, Verify written memory: %d\n", (time_us_32() - start)/1000, memcmp(_Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, data, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin));
+
+    printf("Verify data:\n"); 
+    if ( !probe_verify_memory(0x20000000, _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin) )
+    {
+       printf("Verify failed, Bad data send\n"); 
+    }
+
+    printf("Read took %dms\n", (time_us_32() - start)/1000);
 
     bool waiting = true;
     uint32_t magiccheck = 0;
 
     uint8_t empty[12] = {0};
-    probe_write_memory(0x20038000, empty, 12);
+    if ( ! probe_write_memory(0x20038000, empty, 12) )
+    {
+        printf("Clear error\n");
+    }
     magiccheck = 0;
-    probe_read_memory( 0x20038000, (uint8_t*)&magiccheck, sizeof magiccheck);
+    if ( ! probe_read_memory( 0x20038000, (uint8_t*)&magiccheck, sizeof magiccheck) || magiccheck != 0)
+    {
+        printf("Initial magic error\n");
+    }
 
     // start execution.
     probe_write_ap(ahbap_rw_TAR, DCRDR); // Debug Core Register Data Register
@@ -857,16 +1076,22 @@ bool sendhelper( void )
 
     uint32_t magic = 0xDEADBEEF;
 
-    printf("Waiting magic\n");
+    printf("Waiting magic to confirm execution started\n");
+
+    sleep_ms(20); // seems to sometimes need a small delay after execution starts to get a non error read?
 
     start = time_us_32();
     do
     {
         magiccheck = 0;
-        probe_read_memory( 0x20038000, (uint8_t*)&magiccheck, sizeof magiccheck);
+        if ( !probe_read_memory( 0x20038000, (uint8_t*)&magiccheck, sizeof magiccheck) )
+        {
+            printf("magic read error\n");
+            //return false;
+        }
         if ( magiccheck == magic )
         {
-            printf("Got magic: %08x\n", magiccheck);
+            printf("Got confirmation: %08x\n", magiccheck);
             return true;
         }
         sleep_ms(100);
@@ -946,14 +1171,16 @@ int32_t probe_wait_reply( uint32_t timeout )
     int32_t result = 0;
     timeout = timeout*1000;
     uint32_t start = time_us_32();
+    for ( int i=0;i<8;i++)
+        probe_low();  // idle
     while ( result == 0 && time_us_32()-start < timeout )
     {
-        sleep_ms(20);
         if ( !probe_read_memory( 0x20038000+offsetof(shareddata_t, res), (uint8_t*)&result, sizeof result) )
         {
-            printf("error reading address %08x\n", offsetof(shareddata_t, res));
+            printf("error reading address %08x\n", 0x20038000+offsetof(shareddata_t, res));
             break;
         }
+        sleep_ms(1);
     }
 
     if ( result == 0 )
@@ -1161,61 +1388,125 @@ int main() {
 
             bool processed = false;
 
+            if ( streql(tkn1, "send" ) )
+            {
+                processed = true;
+                uint32_t datasize = sizeof rp2_pico_20220618_v1_19_1_uf2;
+                if ( datasize % 512 != 0 )
+                {
+                    printf("Bad data size %dB\n", datasize); 
+                } else
+                {
+                    UF2_Block * uf2data = (UF2_Block *)rp2_pico_20220618_v1_19_1_uf2;
+                    uint32_t uf2blocks = datasize/512;
+                    uint32_t highaddr = 0;
+                    uint32_t lowaddr = 0xffffffff;
+                    bool baddata = false;
+                    for ( int i=0;i<uf2blocks;i++)
+                    {
+                        if ( uf2data[i].magicStart0 != UF2_MAGIC_START0
+                        || uf2data[i].magicStart1 != UF2_MAGIC_START1
+                        || uf2data[i].magicEnd != UF2_MAGIC_END 
+                        || uf2data[i].numBlocks != uf2blocks 
+                        || uf2data[i].payloadSize > 256 // only allow blocks smaller than a flash write page.
+                        || uf2data[i].blockNo != i 
+                        || ( uf2data[i].flags & 0x2000 == 0x2000 && uf2data[i].reserved != PICOFAMILYID )
+                        )
+                        {
+                            break;
+                            baddata = true;
+                        }
+                        uint32_t curaddr = uf2data[i].targetAddr;
+                        if ( curaddr > highaddr )
+                            highaddr = curaddr;
+                        if ( curaddr < lowaddr )
+                            lowaddr = curaddr;
+                    }
+                    highaddr = (highaddr+256); // actual end of data will be a page later.
+                    if ( highaddr % 4096 != 0)
+                        highaddr = highaddr + ( 4096 - highaddr % 4096 ); // pad upto next 4k boundary.
+                    
+                    if ( baddata )
+                    {
+                        printf("Bad data found, ignoring\n"); 
+                    } else
+                    {
+                        // data verified, start sending!
+                        printf("UF2 data ok %d blocks, erasing from %08x to %08x\n", uf2blocks, lowaddr, highaddr);
+
+                        uint32_t erasesize = highaddr-lowaddr;
+                        
+                        probe_write_memory(0x20038000+offsetof(shareddata_t, addr), (uint8_t*)&lowaddr, 4);
+                        probe_write_memory(0x20038000+offsetof(shareddata_t, size), (uint8_t*)&erasesize, 4);
+                        probe_send_instruction(7);
+                        uint32_t start = time_us_32();
+                        int32_t res = probe_wait_reply(20000); // erase could take a while.
+
+                        if ( res != 1 )
+                        {
+                            printf("data erase failed %d\n", res);
+                        } else
+                        {
+                            printf("erase took %dms\n", (time_us_32()-start)/1000);
+                            int32_t lastperc = -1;
+                            bool error = false;
+                            
+                            for ( int i=0;i<uf2blocks;i++)
+                            {
+                                int32_t perc = ( ( 100000/(uf2blocks-1)) * i) / 1000;
+
+                                if ( perc != lastperc )
+                                {
+                                    lastperc = perc;
+                                    printf("Progress %d%%\n", perc);
+                                }
+
+                                if ( uf2data[i].flags & 0x1 != 0 )
+                                {
+                                    printf("UF2 block %d not for flash, ignoring", i);
+                                    continue;
+                                }
+                                //printf("UF2 block %d, %08x:%d(%03x)\n", i, uf2data[i].targetAddr, uf2data[i].payloadSize, uf2data[i].payloadSize);
+
+                                uint32_t sendsize = uf2data[i].payloadSize; // uf2 block size.
+                                //uint32_t crccalc = crc16(uf2data[i].data, sendsize);
+                                uint32_t crccalc = crc32b(uf2data[i].data, sendsize);
+                                //printf("Data send %dB crc32 %08x\n", sendsize, crc);
+                                probe_write_memory(0x20038000+offsetof(shareddata_t, addr), (uint8_t*)&uf2data[i].targetAddr, 4);
+                                probe_write_memory(0x20038000+offsetof(shareddata_t, data), uf2data[i].data, sendsize);
+                                probe_write_memory(0x20038000+offsetof(shareddata_t, size), (uint8_t*)&sendsize, 4);
+                                probe_write_memory(0x20038000+offsetof(shareddata_t, crc), (uint8_t*)&crccalc, 4);
+                                probe_send_instruction(6);
+                                int32_t res = probe_wait_reply(1000);
+                                int32_t crcread = 0;
+                                probe_read_memory( 0x20038000+offsetof(shareddata_t, crc), (uint8_t*)&crcread, sizeof crcread);
+                                crcread = ~crcread;
+                                if ( res == 1 && crcread == crccalc )
+                                    continue; //printf("data sent ok\n");
+                                else
+                                {
+                                    printf("data send error %d, %04x %04x on block %d\n", res, crcread, crccalc, i);
+                                    error = true;
+                                    break;
+                                }
+                                printf("unknown state\n");
+                                break;
+                            }  
+
+                            if ( lastperc != 100 && !error )
+                            {
+                                printf("Progress 100%%\n");
+                                printf("data sent ok took %d\n", 0);
+                            }
+                        }
+                    }
+                }
+            }
+
             if ( connected )
             {
                 processed = true;
-                if ( streql(tkn1, "send" ) )
-                {
-                    uint32_t datasize = sizeof rp2_pico_20220618_v1_19_1_uf2;
-                    if ( datasize % 512 != 0 )
-                    {
-                       printf("Bad data size %dB\n", datasize); 
-                    } else
-                    {
-                        UF2_Block * uf2data = (UF2_Block *)rp2_pico_20220618_v1_19_1_uf2;
-                        uint32_t uf2blocks = datasize/512;
-                        bool baddata = false;
-                        for ( int i=0;i<uf2blocks;i++)
-                        {
-                            if ( uf2data[i].magicStart0 != UF2_MAGIC_START0
-                            || uf2data[i].magicStart1 != UF2_MAGIC_START1
-                            || uf2data[i].magicEnd != UF2_MAGIC_END 
-                            ||  uf2data[i].numBlocks != uf2blocks 
-                            || uf2data[i].blockNo != i )
-                            {
-                                break;
-                                baddata = true;
-                            }
-                        }
-
-                        if ( baddata )
-                        {
-                            printf("Bad data found, ignoring\n"); 
-                        } else
-                        {
-                            // data verified, start sending!
-                            printf("UF2 data ok, sending\n"); 
-                            //for ( int i=0;i<uf2blocks;i++)
-                            {
-                                uint32_t sendsize = 256; // uf2 block size.
-                                uint32_t crc32 = crc32b(_Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sendsize);
-                                printf("Data send %dB crc32 %08x\n", sendsize, crc32);
-                                probe_write_memory(0x20038000+offsetof(shareddata_t, data), _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sendsize);
-                                probe_write_memory(0x20038000+offsetof(shareddata_t, size), (uint8_t*)&sendsize, 4);
-                                probe_write_memory(0x20038000+offsetof(shareddata_t, crc32), (uint8_t*)&crc32, 4);
-                                probe_send_instruction(6);
-                                int32_t res = probe_wait_reply(1000);
-                                int32_t crc32read = 0;
-                                probe_read_memory( 0x20038000+offsetof(shareddata_t, crc32), (uint8_t*)&crc32read, sizeof crc32read);
-                                crc32read = ~crc32read;
-                                if ( res == 1 && crc32read == crc32 )
-                                    printf("data sent ok\n");
-                                else
-                                    printf("data send error\n");
-                                }    
-                        }
-                    }
-                } else if ( streql(tkn1, "blink" ) )
+                if ( streql(tkn1, "blink" ) )
                 {
                     printf("Blink\n");
                     probe_send_instruction(0xff);
@@ -1227,6 +1518,7 @@ int main() {
                     {
                         printf("boot.py recovery\n");
                         probe_send_instruction(1);
+                        sleep_ms(20);
                         int32_t res = probe_wait_reply(5000);
                         printf("result %d\n", res);
                     } else
@@ -1239,6 +1531,7 @@ int main() {
                     {
                         printf("main.py recovery\n");
                         probe_send_instruction(2);
+                        sleep_ms(20);
                         int32_t res = probe_wait_reply(5000);
                         printf("result %d\n", res);
                     } else
@@ -1249,13 +1542,37 @@ int main() {
                 {
                     if ( filesystem )
                     {
-                        printf("files\n");
+                        printf("clearing file area\n");
                         probe_send_instruction(3);
+                        sleep_ms(20);
+                        int32_t res = probe_wait_reply(5000);
+                        printf("result %d\n", res);
                     } else
                     {
                        printf("wipefiles: no file system found\n"); 
                     }
-                } else if ( streql(tkn1, "usb" ) )
+                } else if ( streql(tkn1, "wipenofiles" ) )
+                {
+                    printf("wiping program region only\n");
+                    uint32_t lowaddr = 0x10000000;
+                    uint32_t erasesize = PICO_FLASH_SIZE_BYTES - MICROPY_HW_FLASH_STORAGE_BYTES;
+
+                    probe_write_memory(0x20038000+offsetof(shareddata_t, addr), (uint8_t*)&lowaddr, 4);
+                    probe_write_memory(0x20038000+offsetof(shareddata_t, size), (uint8_t*)&erasesize, 4);
+                    probe_send_instruction(7);
+                    uint32_t start = time_us_32();
+                    int32_t res = probe_wait_reply(20000); // erase could take a while.
+
+                    if ( res != 1 )
+                    {
+                        printf("data erase failed %d\n", res);
+                    } else
+                    {
+                        printf("data erase succeeded %d\n", res);
+                    }
+                }
+                
+                else if ( streql(tkn1, "usb" ) )
                 {
                     printf("usb load requested\n");
                     probe_send_instruction(4);
