@@ -5,7 +5,9 @@
 #include "hardware/structs/systick.h"
 #include "helper.h"
 #include "pico_hal.h"
+#include "uf2.h"
 #include "../wipe/wipe.h"
+#include "micropythonuf2.h"
 //#include "picoprobe_config.h"
 //#include "probe.h"
 
@@ -20,8 +22,7 @@ const uint PROBE_DIR = PROBE_PIN_DIR;
 
 const 
 
-#define CYCLES1 3
-#define CYCLES2 1
+#define CYCLES1 1
 
 uint32_t crc32b(unsigned char *data, uint32_t size) {
    int i, j;
@@ -41,59 +42,52 @@ uint32_t crc32b(unsigned char *data, uint32_t size) {
    return ~crc;
 }
 
-inline void cycledelay(int cycles)
+inline void cycledelay()
 {
-    for ( int i=0;i<cycles;i++)
+    //for ( int i=0;i<cycles;i++)
+        asm("NOP"); // two nops appears to give a big enough delay to work. approx 3x speedup to uploading.
         asm("NOP");
 }
 
 void probe_high(void)
 {
     gpio_put(PROBE_SWDIO, 1);
-    cycledelay(CYCLES1);  
+    //cycledelay();  
     gpio_put(PROBE_SWDCLK, 1);
-    cycledelay(CYCLES1);  
+    cycledelay();  
     gpio_put(PROBE_SWDCLK, 0); 
-    cycledelay(CYCLES1);     
+    cycledelay();     
 }
 
 void probe_low(void)
 {
     gpio_put(PROBE_SWDIO, 0);
-    cycledelay(CYCLES1); 
+    //cycledelay(); 
     gpio_put(PROBE_SWDCLK, 1);
-    cycledelay(CYCLES1); 
+    cycledelay(); 
     gpio_put(PROBE_SWDCLK, 0); 
-    cycledelay(CYCLES1);  
+    cycledelay();  
 }
 
 void probe_turn(void)
 {
-    cycledelay(CYCLES1); 
+    //cycledelay(); 
     gpio_put(PROBE_SWDCLK, 1);
-    cycledelay(CYCLES1); 
+    cycledelay(); 
     gpio_put(PROBE_SWDCLK, 0); 
-    cycledelay(CYCLES1); 
+    cycledelay(); 
 }
 
 bool probe_read(void)
 {
-    cycledelay(CYCLES1);
+    cycledelay();
     bool res = gpio_get(PROBE_SWDIO);
     gpio_put(PROBE_SWDCLK, 1);
-    cycledelay(CYCLES1);
+    cycledelay();
     gpio_put(PROBE_SWDCLK, 0);
-    cycledelay(CYCLES1);
+    //cycledelay();
     return res;  
 }
-
-#if 0
-def parity32(i):
-    i = i - ((i >> 1) & 0x55555555)
-    i = (i & 0x33333333) + ((i >> 2) & 0x33333333)
-    i = (((i + (i >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24
-    return i & 1
-#endif
 
 void probe_sendbits(const uint8_t * data, int bits)
 {
@@ -227,7 +221,6 @@ void probe_setdir(int dir)
         gpio_set_dir(PROBE_SWDIO, GPIO_IN);
         while (gpio_is_dir_out(PROBE_SWDIO));
     }
-
 }
 
 #define SWDIO_H gpio_put(PROBE_SWDIO, 1)
@@ -237,110 +230,6 @@ void probe_setdir(int dir)
 #define SWCLK_L gpio_put(PROBE_SWDCLK, 0)
 
 #define SWDIO_IS_H (gpio_get(PROBE_SWDIO) == 1)
-
-void _prv_SWDDelay(uint32_t n)
-{
-    while (n--)
-        asm("NOP");
-}
-
-
-
-#if 0
-ERRCODE SWDWrDPReg(uint32_t regId, uint32_t u32Val)
-{
-    ERRCODE err = E_OK;
-    uint32_t i;
-    // Access to WRC register is deprecated and we
-    // don't support.
-    if (regId == swdpreg_rw_WCR)
-        return E_SWD_NOT_SUPPORTED;
-   // try 3 times in case we got errors.
-    for (i=0; i<3; i++)
-    {
-        // if we got error on the last try, then we
-        // clear all error flags or reinitialize.
-        if (0 != i)
-        {
-            printf("write fault %d\n", err); 
-            if (err == E_SWD_FAULT)
-            {
-                SWDWrDPReg(swdpreg_wo_ABORT, 0x1E);
-            } else
-                DAPInits(PP_NULL);
-        }
-        err = SWDWr(0, regId >> 2, u32Val);
-        if (err >= E_OK)
-            break;
-    }
-    return err;
-}
-
-typedef struct {
-    uint8_t b4APBankSel;
-} DS_SWDP_SELECT;
-
-ERRCODE SWDWrAPReg(uint32_t apRegAddr, uint32_t val)
-{
-/*
-    ahbap_rw_TAR = 0x04,
-    ahbap_rw_DRW = 0x0C,
-    swdpreg_wo_SELECT= 8,
-    */
-
-    ERRCODE err = E_OK;
-    uint32_t i;
-    DS_SWDP_SELECT apSel;
-    ((U32*)&apSel)[0] = 0;
-    // First set the high 4 bits address of AHB-AP by
-    // writing SW-DP's SELECT register
-    apSel.b4APBankSel = apRegAddr >> 4;
-    err = SWDWrDPReg(swdpreg_wo_SELECT, ((U32*)&apSel)[0]);
-    if (err == E_SWD_FAULT)
-    {
-        SWDWrDPReg(swdpreg_wo_ABORT, 0x1E);
-    }
-    err = SWDWr(1, (apRegAddr >> 2) & 3, val);
-    return err;
-}
-
-ERRCODE SWDRdAPReg(uint32_t apRegAddr, OUT uint32_t *pVal)
-{
-    ERRCODE err = E_OK;
-    DS_SWDP_SELECT apSel;
-    ((U32*)&apSel)[0] = 0;
-    // First set the high 4 bits address of AHB-AP by
-    // writing SW-DP's SELECT register
-    apSel.b4APBankSel = apRegAddr >> 4;
-    err = SWDWrDPReg(swdpreg_wo_SELECT, ((U32*)&apSel)[0]);
-    // Read AHB-AP, the first read just issues the read operation, we
-    // then read the SW-DP's RDBUFF register to fetch the result
-    err = SWDRd(1, (apRegAddr >> 2) & 3, pVal);
-    err = SWDRd(0, swdpreg_ro_RDBUFF >> 2, pVal);
-    return err;
-}
-
-ERRCODE DAPInits(OUT uint32_t *pIDR)
-{
-    ERRCODE err = E_OK;
-    uint32_t tmp;
-    #if 1
-    // Set SWDIO line output
-    probe_setdir(1);
-
-    err = SWDRd(0, 0, pIDR);
-    if (err < E_OK)
-        return err;
-    #endif
-    // Clear any sticky bits in the SW-DP
-    SWDWr(0, swdpreg_wo_ABORT >> 2, 0x1E);
-    // Request system power up, debug component power up
-    SWDWr(0, swdpreg_rw_CSR >> 2, 0x50000001);
-    // Set AHB-AP 32 bit access, automatic increment, access as debug
-    SWDWrAPReg(ahbap_rw_CSW, 2 | 1<<4 | 1<<24 | 1<<25 | 1<<29);
-    return err;
-}
-#endif
 
 #define CDRADDR_DHCSR
 #define CDRADDR_DCRSR
@@ -1082,23 +971,13 @@ bool streql( const char * str1, const char * str2 )
 
 int main() {
 #ifndef PICO_DEFAULT_LED_PIN
-#warning blink example requires a board with a regular LED
+#warning requires a board with a regular LED
 #else
+    set_sys_clock_khz(250000, true); //250mhz seems to work
+
     stdio_init_all();
 
     SEGGER_RTT_Init();
-
-#if 0
-    if (pico_mount(false) == LFS_ERR_OK) {
-        if ( !recoverfiles() )
-            printf("Error recovering files\n");
-    } else
-    {
-        printf("Error mounting FS, deleting file system area instead.\n");
-    }
-
-    printf("FS mounted\n");
-#endif
 
     const uint LED_PIN = PICO_DEFAULT_LED_PIN;
     gpio_init(LED_PIN);
@@ -1126,20 +1005,6 @@ int main() {
     volatile uint32_t rttsize = sizeof _SEGGER_RTT;
 
     gpio_put(LED_PIN, 1);
-
-#if 0
-    uint8_t eraseboot[4] = {5};
-    probe_write_memory(0x20038004, eraseboot, 4);
-
-    int32_t result = 0;
-    while ( result == 0 )
-    {
-        sleep_ms(20);
-        probe_read_memory( 0x20038008, (uint8_t*)&result, sizeof result);
-    }
-    printf("Boot block erased, sending blink command\n");
-
-#endif
 
     bool connected = false;
     bool filesystem = false;
@@ -1301,21 +1166,55 @@ int main() {
                 processed = true;
                 if ( streql(tkn1, "send" ) )
                 {
-                    uint32_t sendsize = 311;
-                    uint32_t crc32 = crc32b(_Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sendsize);
-                    printf("Data send %dB crc32 %08x\n", sendsize, crc32);
-                    probe_write_memory(0x20038000+offsetof(shareddata_t, data), _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sendsize);
-                    probe_write_memory(0x20038000+offsetof(shareddata_t, size), (uint8_t*)&sendsize, 4);
-                    probe_write_memory(0x20038000+offsetof(shareddata_t, crc32), (uint8_t*)&crc32, 4);
-                    probe_send_instruction(6);
-                    int32_t res = probe_wait_reply(1000);
-                    int32_t crc32read = 0;
-                    probe_read_memory( 0x20038000+offsetof(shareddata_t, crc32), (uint8_t*)&crc32read, sizeof crc32read);
-                    crc32read = ~crc32read;
-                    if ( res == 1 && crc32read == crc32 )
-                        printf("data sent ok\n");
-                    else
-                        printf("data send error\n");
+                    uint32_t datasize = sizeof rp2_pico_20220618_v1_19_1_uf2;
+                    if ( datasize % 512 != 0 )
+                    {
+                       printf("Bad data size %dB\n", datasize); 
+                    } else
+                    {
+                        UF2_Block * uf2data = (UF2_Block *)rp2_pico_20220618_v1_19_1_uf2;
+                        uint32_t uf2blocks = datasize/512;
+                        bool baddata = false;
+                        for ( int i=0;i<uf2blocks;i++)
+                        {
+                            if ( uf2data[i].magicStart0 != UF2_MAGIC_START0
+                            || uf2data[i].magicStart1 != UF2_MAGIC_START1
+                            || uf2data[i].magicEnd != UF2_MAGIC_END 
+                            ||  uf2data[i].numBlocks != uf2blocks 
+                            || uf2data[i].blockNo != i )
+                            {
+                                break;
+                                baddata = true;
+                            }
+                        }
+
+                        if ( baddata )
+                        {
+                            printf("Bad data found, ignoring\n"); 
+                        } else
+                        {
+                            // data verified, start sending!
+                            printf("UF2 data ok, sending\n"); 
+                            //for ( int i=0;i<uf2blocks;i++)
+                            {
+                                uint32_t sendsize = 256; // uf2 block size.
+                                uint32_t crc32 = crc32b(_Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sendsize);
+                                printf("Data send %dB crc32 %08x\n", sendsize, crc32);
+                                probe_write_memory(0x20038000+offsetof(shareddata_t, data), _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sendsize);
+                                probe_write_memory(0x20038000+offsetof(shareddata_t, size), (uint8_t*)&sendsize, 4);
+                                probe_write_memory(0x20038000+offsetof(shareddata_t, crc32), (uint8_t*)&crc32, 4);
+                                probe_send_instruction(6);
+                                int32_t res = probe_wait_reply(1000);
+                                int32_t crc32read = 0;
+                                probe_read_memory( 0x20038000+offsetof(shareddata_t, crc32), (uint8_t*)&crc32read, sizeof crc32read);
+                                crc32read = ~crc32read;
+                                if ( res == 1 && crc32read == crc32 )
+                                    printf("data sent ok\n");
+                                else
+                                    printf("data send error\n");
+                                }    
+                        }
+                    }
                 } else if ( streql(tkn1, "blink" ) )
                 {
                     printf("Blink\n");
