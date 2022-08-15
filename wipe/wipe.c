@@ -74,7 +74,7 @@ uint32_t crc32b(unsigned char *data, uint32_t size) {
       i = i + 1;
    }
    return ~crc;
-}i
+};
 
 // copy paste in direct snipped of sdk code, via https://forums.raspberrypi.com/viewtopic.php?t=332590
 
