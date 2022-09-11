@@ -240,10 +240,13 @@ static void init_starting_clusters(void)
 
   for (uint16_t i = 0; i < NUM_FILES; i++)
   {
+    uint32_t clustersize = BPB_SECTOR_SIZE*BPB_SECTORS_PER_CLUSTER;
+    printf("File %d start cluster %d addr %08x\n", i, start_cluster, start_cluster*clustersize);
     info[i].cluster_start = start_cluster;
     info[i].cluster_end = start_cluster + UF2_DIV_CEIL(info[i].size, BPB_SECTOR_SIZE*BPB_SECTORS_PER_CLUSTER) - 1;
 
     start_cluster = info[i].cluster_end + 1;
+
   }
 
   return;
@@ -489,12 +492,13 @@ int uf2_write_block (uint32_t block_no, uint8_t *data, WriteState *state)
   (void) block_no;
   UF2_Block *bl = (void*) data;
 
-  if ( !is_uf2_block(bl) ) return -1;
+  if ( !is_uf2_block(bl) ) return -1; // ignore anything that\s not a uf2 block in input stream.
 
   if (bl->familyID == BOARD_UF2_FAMILY_ID)
   {
+    printf("Writing UF2 block %d %d/%d %dB\n", block_no, bl->blockNo+1, bl->numBlocks, bl->payloadSize);
     // generic family ID
-    board_flash_write(bl->targetAddr, bl->data, bl->payloadSize);
+    board_flash_write(4096+bl->blockNo*256, bl->data, bl->payloadSize);
   }else
   {
     // TODO family matches VID/PID

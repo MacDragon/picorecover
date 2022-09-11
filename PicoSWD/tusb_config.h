@@ -83,7 +83,7 @@ extern "C" {
 #define CFG_TUD_MIDI            0
 #define CFG_TUD_VENDOR          0
 
-#define CFG_TUD_MSC_EP_BUFSIZE  512
+#define CFG_TUD_MSC_EP_BUFSIZE  4096 // full flash sector per buffer for efficiency
 
 #ifdef __cplusplus
 }

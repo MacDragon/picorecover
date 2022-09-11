@@ -37,6 +37,11 @@ static uint32_t _write_ms;
 
 static WriteState _wr_state = { 0 };
 
+void msc_reset_write( void )
+{
+    memset(&_wr_state, 0, sizeof _wr_state); // reset write state so if opened again will complete.
+}
+
 //--------------------------------------------------------------------+
 // tinyusb callbacks
 //--------------------------------------------------------------------+
@@ -139,12 +144,18 @@ int32_t tud_msc_write10_cb (uint8_t lun, uint32_t lba, uint32_t offset, uint8_t*
   (void) lun;
   (void) offset;
 
+  printf("Usb write to %08x of %d\n", lba, bufsize);
+
   uint32_t count = 0;
   while ( count < bufsize )
   {
     // Consider non-uf2 block write as successful
     // only break if write_block is busy with flashing (return 0)
     if ( 0 == uf2_write_block(lba, buffer, &_wr_state) ) break;
+
+    // write block to flash data area.
+    // keep list of erased area.
+    // erase as go, mark as erased to avoid processing again.
 
     lba++;
     buffer += 512;
@@ -164,6 +175,7 @@ void tud_msc_write10_complete_cb(uint8_t lun)
   if ( _wr_state.aborted )
   {
     // aborted and reset
+    printf("write aborted\n");
     //indicator_set(STATE_WRITING_FINISHED);
   }
   else if ( _wr_state.numBlocks )
@@ -176,6 +188,7 @@ void tud_msc_write10_complete_cb(uint8_t lun)
       #endif
 
       first_write = false;
+      printf("write started\n");
       //indicator_set(STATE_WRITING_STARTED);
     }
 
@@ -189,12 +202,15 @@ void tud_msc_write10_complete_cb(uint8_t lun)
       printf("Speed : %.02f KB/s\r\n", (wr_byte / 1000.0F) / (_write_ms / 1000.0F));
       #endif
 
+      printf("write complete\n");
+      tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3A, 0x00);
       //indicator_set(STATE_WRITING_FINISHED);
       //board_dfu_complete();
 
       // board_dfu_complete() should not return
       // getting here is an indicator of error
-      while(1) {}
+      //while(1) {}
+      tud_disconnect();
     }
   }
 }
@@ -207,6 +223,8 @@ void tud_msc_capacity_cb(uint8_t lun, uint32_t* block_count, uint16_t* block_siz
 
   *block_count = CFG_UF2_NUM_BLOCKS;
   *block_size  = 512;
+
+   printf("Returning size %d:%d->%dB\n", *block_count, *block_size, *block_count * *block_size);
 }
 
 // Invoked when received Start Stop Unit command
@@ -221,10 +239,14 @@ bool tud_msc_start_stop_cb(uint8_t lun, uint8_t power_condition, bool start, boo
   {
     if (start)
     {
+       printf("Load requested\n");
       // load disk storage
     }else
     {
+      printf("Eject requested\n");
+      tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3A, 0x00);
       // unload disk storage
+      return false;
     }
   }
 

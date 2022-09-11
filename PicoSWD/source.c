@@ -7,7 +7,7 @@
 #include "pico_hal.h"
 #include "uf2.h"
 #include "../wipe/wipe.h"
-#include "micropythonuf2.h"
+//#include "micropythonuf2.h"
 //#include "picoprobe_config.h"
 //#include "probe.h"
 
@@ -1111,13 +1111,9 @@ int main() {
 
     gpio_put(LED_PIN, 1);
 
-    usbload();
-
-    while ( 1 );
-
     bool connected = false;
     bool filesystem = false;
-
+#if 0
     int res = pico_mount(false);
 
     if ( res == LFS_ERR_OK)
@@ -1127,7 +1123,7 @@ int main() {
     {
         printf("No local file system"); 
     }
-
+#endif
     printf("Enter Command (connect to start) :\n");
 
 	uint8_t charcount = 0;
@@ -1279,7 +1275,7 @@ int main() {
             gpio_put(LED_PIN, 1);
 
             bool processed = false;
-
+#if 0
             if ( streql(tkn1, "send" ) )
             {
                 processed = true;
@@ -1393,6 +1389,7 @@ int main() {
                     }
                 }
             }
+#endif
 
             if ( streql(tkn1, "usbload" ) )
             {

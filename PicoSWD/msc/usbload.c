@@ -39,19 +39,38 @@ static volatile uint32_t _timer_count = 0;
 int usbload(void)
 {
   //board_dfu_init();
-  //board_flash_init();
+  board_flash_init();
+
+  msc_reset_write();
   
   uf2_init();
   tusb_init();
 
-  printf("Start usb task\n"); 
+  printf("Start usb drive\n"); 
+
+  tud_connect();
+
+  bool run = true;
+  bool connected = false;
 
 #if (CFG_TUSB_OS == OPT_OS_NONE || CFG_TUSB_OS == OPT_OS_PICO)
-  while(1)
+  while(run)
   {
     tud_task();
+
+    if ( !connected && tud_connected() )
+    {
+      connected = true;
+    }
+
+    if ( connected && !tud_connected())
+    {
+      run = false;
+    }
   }
 #endif
+
+printf("usb exit\n");
 }
 
 //--------------------------------------------------------------------+

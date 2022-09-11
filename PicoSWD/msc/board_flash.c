@@ -26,9 +26,13 @@
 #include "tusb.h" // for logging
 #include "hardware/flash.h"
 
-#define FLASH_STORAGE_SIZE 1024*16 // must be flash sector size 256 aligned
+#define FLASH_STORAGEBLOCKS (385)
+
+#define FLASH_STORAGE_SIZE (4096*FLASH_STORAGEBLOCKS) // must be flash sector size 256 aligned and whole number of flash erase sectors for simplicity
 
 #define FLASH_TARGET_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_STORAGE_SIZE)
+
+static bool erased[FLASH_STORAGEBLOCKS];
 
 //--------------------------------------------------------------------+
 //
@@ -36,6 +40,9 @@
 void board_flash_init(void)
 {
   // init is already performed by bootloader.
+  printf("Resetting flash drive for new upload\n");
+  memset(erased, 0, sizeof erased);
+  #if 0
   printf("Setting test data\n");
   flash_range_erase(FLASH_TARGET_OFFSET, FLASH_STORAGE_SIZE);
 
@@ -45,6 +52,7 @@ void board_flash_init(void)
     sprintf(data, "Testing %d", i);
     flash_range_program(FLASH_TARGET_OFFSET + FLASH_PAGE_SIZE*i, data, 256);
   }
+  #endif
 }
 
 uint32_t board_flash_size(void)
@@ -68,8 +76,26 @@ void board_flash_flush(void)
 
 void board_flash_write (uint32_t addr, void const *data, uint32_t len)
 {
-    printf("Write to %lu:%lu\n", addr, len);
-    //flash_range_program	(	addr, data, len);	
+    uint32_t block = addr >>12;
+
+    if ( block >= FLASH_STORAGEBLOCKS )
+    {
+        printf("write outside storage area!\n");
+        return;
+    }
+
+    if ( !erased[block] )
+    {
+      uint32_t eraseaddr = FLASH_TARGET_OFFSET + 4096*block;
+      printf("erasing block %d before write at %08x\n", block, eraseaddr);
+      erased[block] = true;
+      //flash_range_erase(FLASH_TARGET_OFFSET + 4096*block, 4096);
+    }
+
+    printf("Write to %08x:%lu, block %d\n", addr, len, block);
+    {
+        flash_range_program(FLASH_TARGET_OFFSET + addr, data, 256);
+    }
 }
 
 void board_flash_erase_app(void)
