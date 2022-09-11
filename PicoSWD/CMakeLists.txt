@@ -18,11 +18,13 @@ set(CMAKE_CXX_STANDARD 17)
 add_executable(PicoSWD source.c led.c)
  
 add_subdirectory(littlefs-lib)
+add_subdirectory(msc)
 
 target_include_directories(PicoSWD PRIVATE ${../../wipe/})
+target_include_directories(PicoSWD PRIVATE .)
 
 # Link the Project to an extra library (pico_stdlib)
-target_link_libraries(PicoSWD pico_stdlib hardware_pio littlefs-lib)
+target_link_libraries(PicoSWD pico_stdlib hardware_pio littlefs-lib tinyusb_device tinyusb_board)
 
 # Initalise the SDK
 pico_sdk_init()

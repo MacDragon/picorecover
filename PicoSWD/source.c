@@ -1080,11 +1080,10 @@ int main() {
 #warning requires a board with a regular LED
 #else
     set_sys_clock_khz(250000, true); //250mhz seems to work
-
     stdio_init_all();
 
     SEGGER_RTT_Init();
-
+    
     const uint LED_PIN = PICO_DEFAULT_LED_PIN;
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
@@ -1112,8 +1111,22 @@ int main() {
 
     gpio_put(LED_PIN, 1);
 
+    usbload();
+
+    while ( 1 );
+
     bool connected = false;
     bool filesystem = false;
+
+    int res = pico_mount(false);
+
+    if ( res == LFS_ERR_OK)
+    {
+        printf("local file system ok");
+    } else
+    {
+        printf("No local file system"); 
+    }
 
     printf("Enter Command (connect to start) :\n");
 
@@ -1289,7 +1302,7 @@ int main() {
                         || uf2data[i].numBlocks != uf2blocks 
                         || uf2data[i].payloadSize > 256 // only allow blocks smaller than a flash write page.
                         || uf2data[i].blockNo != i 
-                        || ( uf2data[i].flags & 0x2000 == 0x2000 && uf2data[i].reserved != PICOFAMILYID )
+                        || ( uf2data[i].flags & 0x2000 == 0x2000 && uf2data[i].familyID != PICOFAMILYID )
                         )
                         {
                             break;
@@ -1381,6 +1394,12 @@ int main() {
                 }
             }
 
+            if ( streql(tkn1, "usbload" ) )
+            {
+                usbload();
+                processed = true;
+            } 
+            
             if ( !processed && connected )
             {
                 processed = true;
