@@ -137,6 +137,35 @@ int32_t tud_msc_read10_cb (uint8_t lun, uint32_t lba, uint32_t offset, void* buf
   return count;
 }
 
+void DumpHex(const void* data, size_t size) {
+	char ascii[17];
+	size_t i, j;
+	ascii[16] = '\0';
+	for (i = 0; i < size; ++i) {
+		printf("%02X ", ((unsigned char*)data)[i]);
+		if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
+			ascii[i % 16] = ((unsigned char*)data)[i];
+		} else {
+			ascii[i % 16] = '.';
+		}
+		if ((i+1) % 8 == 0 || i+1 == size) {
+			printf(" ");
+			if ((i+1) % 16 == 0) {
+				printf("|  %s \n", ascii);
+			} else if (i+1 == size) {
+				ascii[(i+1) % 16] = '\0';
+				if ((i+1) % 16 <= 8) {
+					printf(" ");
+				}
+				for (j = (i+1) % 16; j < 16; ++j) {
+					printf("   ");
+				}
+				printf("|  %s \n", ascii);
+			}
+		}
+	}
+}
+
 // Callback invoked when received WRITE10 command.
 // Process data in buffer to disk's storage and return number of written bytes
 int32_t tud_msc_write10_cb (uint8_t lun, uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t bufsize)
@@ -145,6 +174,18 @@ int32_t tud_msc_write10_cb (uint8_t lun, uint32_t lba, uint32_t offset, uint8_t*
   (void) offset;
 
   printf("Usb write to %08x of %d\n", lba, bufsize);
+
+  if ( lba == 0x205 ) // root file table being writte, we can get file name from here.
+  {
+    uf2_get_filename(buffer, bufsize, 0, &_wr_state);
+    //DumpHex(buffer, bufsize);
+  }
+
+  if ( lba == 0x206 ) // root file table being writte, we can get file name from here.
+  {
+    uf2_get_filename(buffer, bufsize, 1, &_wr_state);
+    //DumpHex(buffer, bufsize);
+  }
 
   uint32_t count = 0;
   while ( count < bufsize )
@@ -193,7 +234,7 @@ void tud_msc_write10_complete_cb(uint8_t lun)
     }
 
     // All block of uf2 file is complete --> complete DFU process
-    if (_wr_state.numWritten >= _wr_state.numBlocks)
+    if (_wr_state.numWritten >= _wr_state.numBlocks && _wr_state.gotname )
     {
       #if DEBUG_SPEED_TEST
       uint32_t const wr_byte = _wr_state.numWritten*256;
@@ -202,7 +243,7 @@ void tud_msc_write10_complete_cb(uint8_t lun)
       printf("Speed : %.02f KB/s\r\n", (wr_byte / 1000.0F) / (_write_ms / 1000.0F));
       #endif
 
-      printf("write complete\n");
+      printf("uf2 write complete\n");
       tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3A, 0x00);
       //indicator_set(STATE_WRITING_FINISHED);
       //board_dfu_complete();

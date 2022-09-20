@@ -57,7 +57,7 @@ void board_flash_init(void)
 
 uint32_t board_flash_size(void)
 {
-
+  uf2_reset_namestate();
   printf("Getting flash size:%lu\n", FLASH_STORAGE_SIZE);
   return FLASH_STORAGE_SIZE;
 }

@@ -90,8 +90,23 @@ typedef struct {
 } __attribute__((packed)) DirEntry;
 STATIC_ASSERT(sizeof(DirEntry) == 32);
 
+//https://www.kernel.org/doc/html/latest/filesystems/vfat.html
+
+typedef struct { // Up to 13 characters of a long name
+        unsigned char id;               // sequence number for slot
+        unsigned char name0_4[10];      // first 5 characters in name
+        unsigned char attr;             // attribute byte
+        unsigned char reserved;         // always 0
+        unsigned char alias_checksum;   // checksum for 8.3 alias
+        unsigned char name5_10[12];     // 6 more characters in name
+        unsigned char start[2];         // starting cluster number
+        unsigned char name11_12[4];     // last 2 characters in name
+} __attribute__((packed)) LFNDirEntry;
+
+
 typedef struct FileContent {
   char const name[11];
+  char const longname[234]; // 9 * 26 for a decent length lfn that fits in under 256bytes
   void const * content;
   uint32_t size;       // OK to use uint32_T b/c FAT32 limits filesize to (4GiB - 2)
 
@@ -165,7 +180,7 @@ static FileContent_t info[] = {
     {.name = "FAVICON ICO", .content = favicon_data, .size = favicon_len            },
 #endif
     // current.uf2 must be the last element and its content must be NULL
-    {.name = "CURRENT UF2", .content = NULL       , .size = 0                       },
+    {.name = "CURRENT UF2", .longname = "Currentfile.uf2", .content = NULL       , .size = 0                       },
 };
 
 enum {
@@ -302,6 +317,176 @@ void padded_memcpy (char *dst, char const *src, int len)
   }
 }
 
+typedef enum { nolfn, gotlfn, fulllfn } lfnstate;
+
+static uint8_t dirbuffer[2048];
+static uint8_t blockswritten;
+
+static bool gotname = false;
+
+
+void uf2_reset_namestate(void)
+{
+  memset(dirbuffer, 0, sizeof dirbuffer);
+  // blockswritten = 0;
+}
+
+void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState *state)
+{
+    if ( state->gotname )
+      return;
+
+    memcpy(dirbuffer+block*512, data, 512);
+
+#if 0
+    blockswritten |= ( 1 << block );
+
+    for ( int i=0;i<block;i++)
+    {
+      if ( ( blockswritten & ( 1 < i ) ) == 0 )
+      {
+        printf("missing block %d %02x\n", i, blockswritten);
+        return;
+      }
+    }
+  #endif
+
+    char longname[234];
+    uint8_t longnameposition = 0;
+    uint8_t longnamechecksum = 0;
+    lfnstate lfnstate = nolfn;
+
+    DirEntry *d = (void*) dirbuffer;                   // pointer to next free DirEntry this sector
+    int remainingEntries = DIRENTRIES_PER_SECTOR; // remaining count of DirEntries this sector
+    int count = 0;
+    while ( d->name[0] != 0 && count*32 < sizeof dirbuffer )
+    {
+      if ( d->attrs == 0x0f )
+      {
+          LFNDirEntry * lfn = (LFNDirEntry*)d;
+
+          if ( lfn->id & 0x40 )
+          {
+            longname[0] = 0;
+            longnameposition = lfn->id & 0b1111;
+
+            if ( longnameposition <= (sizeof longname)/26 ) // maximum allowable length to scan in as LFN.
+            {
+              printf("Longname entry start %d parts\n", longnameposition);
+              lfnstate = gotlfn;
+              memset(longname, 0, 4);
+              memset(longname+4, 0xff, sizeof longname-4);
+            }
+            else
+            {
+              printf("Longname entry start %d parts is too long, ignoring\n", longnameposition);
+              lfnstate = nolfn;
+            }
+            longnamechecksum = lfn->alias_checksum;
+          }
+
+          if ( lfnstate == gotlfn ) // currently processing a lfn, add or abandon.
+          {
+            if ( ( lfn->id & 0b1111 ) == longnameposition ) // expected value, continue processing.
+            {
+                //printf("adding to filename at position %d\n", (longnameposition-1)*26);
+                // copy the parts of the filename to final.
+                memcpy(longname+(longnameposition-1)*26, lfn->name0_4, 10);
+                memcpy(longname+(longnameposition-1)*26+10, lfn->name5_10, 12);
+                memcpy(longname+(longnameposition-1)*26+10+12, lfn->name11_12, 4);
+                if (longnameposition == 1)
+                {
+                  printf("Longname entry complete\n");
+                  lfnstate = fulllfn;
+                } else
+                {
+                  printf("Longname entry %d\n", lfn->id & 0b1111);
+                  longnameposition--;
+                }
+            } else
+            {
+              printf("Wrong lfn entry\n");
+              lfnstate = nolfn;
+            }
+          }
+
+      } else if ( d->attrs & 0x08 )
+      {
+        #if 0
+        char volume[12] = "";
+
+        memcpy(volume, d->name, 11);
+        for ( int i=0;i<11;i++)
+          if ( volume[i] == 0x20 ) volume[i] = 0;
+        printf("Volume label entry : %s\n", volume);
+        #endif
+        lfnstate = nolfn;
+      }
+      else //if ( d->attrs & 0x02 == 0 )// regular file name, not hidden.
+      {
+        // check if name matches an existing one, if so ignore it.
+        bool existing = false;
+        for ( int i=0;i<NUM_FILES;i++)
+        {
+            if ( memcmp(info[i].name,d->name, 11) == 0 )
+              existing = true;
+        }
+
+        if ( !existing )
+        {
+          char name[9] = "";
+          char extention[4] = "";
+          memcpy(name, d->name, 8);
+          memcpy(extention, d->name+8, 3);
+          for ( int i=0;i<8;i++)
+            if ( name[i] == 0x20 ) name[i] = 0;
+          for ( int i=0;i<3;i++)
+            if ( extention[i] == 0x20 ) extention[i] = 0;
+          
+          // realistically a uf2 file is not going to be smaller than 4k, eliminates mac directory helper files.
+          if ( strcmp(extention, "UF2") == 0 && !(d->attrs & 0x02) && d->size > 0 )
+          {
+            printf("UF2 File name entry %s.%s size %d\n", name, extention, d->size);
+            
+            uint8_t sum;
+            uint8_t i;
+            // https://www.kernel.org/doc/html/latest/filesystems/vfat.html
+            for (sum = i = 0; i < 11; i++) {
+              sum = (((sum&1)<<7)|((sum&0xfe)>>1)) + d->name[i];
+            }
+
+            if ( lfnstate == fulllfn && sum == longnamechecksum )
+            {
+                printf("Longname : ");
+                int i;
+                for ( i = 0; i<sizeof longname; i+=2 )
+                {
+                  if ( longname[i] == 0 || longname[i] == 0xff )
+                    break;
+                  printf("%c", longname[i]);
+                }
+                printf(" length %d\n", i);
+                memcpy(info[NUM_FILES-1].longname, longname, sizeof longname);
+            }
+            memcpy(info[NUM_FILES-1].name, d->name, 11);
+            // do we have a long name?
+            state->gotname = true;
+            return; // we got out name!
+          } else
+          {
+            printf("File name entry %s.%s size %d\n", name, extention, d->size);
+          }
+        }
+        lfnstate = nolfn; // reset long name
+      }
+
+      count++;
+      d++;
+    } 
+
+
+}
+
 void uf2_read_block (uint32_t block_no, uint8_t *data)
 {
   memset(data, 0, BPB_SECTOR_SIZE);
@@ -386,6 +571,8 @@ void uf2_read_block (uint32_t block_no, uint8_t *data)
     DirEntry *d = (void*) data;                   // pointer to next free DirEntry this sector
     int remainingEntries = DIRENTRIES_PER_SECTOR; // remaining count of DirEntries this sector
 
+    printf("remainingdirEntries %d\n", remainingEntries);
+
     uint32_t startingFileIndex;
 
     if ( sectionRelativeSector == 0 )
@@ -408,7 +595,34 @@ void uf2_read_block (uint32_t block_no, uint8_t *data)
           fileIndex++, d++ )
     {
       // WARNING -- code presumes all files take exactly one directory entry (no long file names!)
+#if 0
+      if ( strlen(info[fileIndex].longname) > 0 )
+      {
+        // we have a long filename, lets store it.
+      }
+#endif
       uint32_t const startCluster = info[fileIndex].cluster_start;
+
+      if ( fileIndex == NUM_FILES-1 && info[fileIndex].longname[0] != 0 ) // if our custom file has a long filename, add it.
+      {
+          uint8_t sum;
+          uint8_t i;
+          // https://www.kernel.org/doc/html/latest/filesystems/vfat.html
+          for (sum = i = 0; i < 11; i++) {
+            sum = (((sum&1)<<7)|((sum&0xfe)>>1)) + info[fileIndex].name[i];
+          }
+        
+          int namelen=0;
+          printf("Adding Longname : ");
+          for ( ; namelen<sizeof info[fileIndex].longname; namelen+=2 )
+          {
+            if ( info[fileIndex].longname[namelen] == 0 || info[fileIndex].longname[namelen] == 0xff )
+              break;
+            printf("%c", info[fileIndex].longname[namelen]);
+          }
+
+          printf(" length %d\n", namelen);
+      }
 
       FileContent_t const *inf = &info[fileIndex];
       padded_memcpy(d->name, inf->name, 11);
@@ -492,13 +706,16 @@ int uf2_write_block (uint32_t block_no, uint8_t *data, WriteState *state)
   (void) block_no;
   UF2_Block *bl = (void*) data;
 
-  if ( !is_uf2_block(bl) ) return -1; // ignore anything that\s not a uf2 block in input stream.
+  if ( !is_uf2_block(bl) )
+  {
+      return -1; // ignore anything that\s not a uf2 block in input stream.
+  }
 
   if (bl->familyID == BOARD_UF2_FAMILY_ID)
   {
-    printf("Writing UF2 block %d %d/%d %dB\n", block_no, bl->blockNo+1, bl->numBlocks, bl->payloadSize);
+    //printf("Writing UF2 block %d %d/%d %dB\n", block_no, bl->blockNo+1, bl->numBlocks, bl->payloadSize);
     // generic family ID
-    board_flash_write(4096+bl->blockNo*256, bl->data, bl->payloadSize);
+    //board_flash_write(4096+bl->blockNo*256, bl->data, bl->payloadSize);
   }else
   {
     // TODO family matches VID/PID
