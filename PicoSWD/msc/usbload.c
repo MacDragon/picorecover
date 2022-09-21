@@ -35,6 +35,7 @@
 void uf2_init(void);
 
 static volatile uint32_t _timer_count = 0;
+volatile closeusb = false;
 
 int usbload(void)
 {
@@ -52,6 +53,7 @@ int usbload(void)
 
   bool run = true;
   bool connected = false;
+  closeusb = false;
 
 #if (CFG_TUSB_OS == OPT_OS_NONE || CFG_TUSB_OS == OPT_OS_PICO)
   while(run)
@@ -63,11 +65,13 @@ int usbload(void)
       connected = true;
     }
 
-    if ( connected && !tud_connected())
+    if ( (connected && !tud_connected() )|| closeusb)
     {
       run = false;
     }
   }
+  tud_disconnect();
+
 #endif
 
 printf("usb exit\n");

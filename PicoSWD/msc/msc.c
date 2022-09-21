@@ -35,6 +35,8 @@
 static uint32_t _write_ms;
 #endif
 
+extern volatile bool closeusb;
+
 static WriteState _wr_state = { 0 };
 
 void msc_reset_write( void )
@@ -244,6 +246,7 @@ void tud_msc_write10_complete_cb(uint8_t lun)
       #endif
 
       printf("uf2 write complete\n");
+
       tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3A, 0x00);
       //indicator_set(STATE_WRITING_FINISHED);
       //board_dfu_complete();
@@ -251,10 +254,12 @@ void tud_msc_write10_complete_cb(uint8_t lun)
       // board_dfu_complete() should not return
       // getting here is an indicator of error
       //while(1) {}
-      tud_disconnect();
+      //tud_disconnect();
 
       // store the header data so we have valid data in storage.
       uf2_write_header();
+      closeusb = true;
+      //while(1) {} // crashes after close.
 
     }
   }
