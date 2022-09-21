@@ -18,7 +18,8 @@
         "initializer_list": "c",
         "ranges": "c",
         "utility": "c",
-        "string": "c"
+        "string": "c",
+        "typeinfo": "c"
     }
 }
 

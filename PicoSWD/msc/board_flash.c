@@ -47,7 +47,7 @@ void board_flash_init(void)
   memset(erased, 0, sizeof erased);
   firsterased = false;
   uint8_t *data=(uint8_t*)XIP_BASE + PICO_FLASH_SIZE_BYTES - FLASH_STORAGE_SIZE;
-  #if 0
+  #if 1
   printf("Header data\n");
   DumpHex(data+4096*6, 256);
   printf("Block address data\n");
@@ -75,7 +75,7 @@ uint32_t board_flash_size(void)
 
 void board_flash_read(uint32_t addr, void* buffer, uint32_t len, bool header)
 {
-  printf("Read from %lu:%lu\n", addr, len);
+  printf("Read %s from %lu:%lu\n", header?"header":"data", addr, len);
   addr = XIP_BASE + PICO_FLASH_SIZE_BYTES - FLASH_STORAGE_SIZE + addr;
   if ( !header )
     addr+=(FLASH_ADDRESSBLOCKS*4096);
@@ -122,7 +122,7 @@ void board_flash_write(uint32_t addr, void const *data, uint32_t len, bool heade
 
     printf("Write to %08x:%lu, block %d\n", addr, len, block);
     {
-        flash_range_program(FLASH_TARGET_OFFSET + addr, data, header?len:256);
+      flash_range_program(FLASH_TARGET_OFFSET + addr, data, header?len:256);
     }
 }
 

@@ -495,6 +495,11 @@ void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState
             lfnstate == nolfn;
           }
 
+
+          if ( d->name[0] == 0xE5)
+          {
+            printf("Ignoring deleted file name entry %s.%s size %d lfn:%c\n", name, extention, d->size, lfnstate == fulllfn?'y':'n');
+          } else
           // realistically a uf2 file is not going to be smaller than 4k, eliminates mac directory helper files.
           if ( strcmp(extention, "UF2") == 0 && !(d->attrs & 0x02) && d->size > 0 )
           {
@@ -777,8 +782,11 @@ void uf2_read_block (uint32_t block_no, uint8_t *data)
         bl->magicStart1 = UF2_MAGIC_START1;
         bl->magicEnd = UF2_MAGIC_END;
         bl->blockNo = fileRelativeSector;
-        bl->numBlocks = UF2_SECTOR_COUNT;
-        bl->targetAddr = addr;
+        bl->numBlocks = headerdata.blocks; //UF2_SECTOR_COUNT;
+        uint32_t targetaddr = 0;
+        board_flash_read(fileRelativeSector*4, &targetaddr, 4, true);
+        printf("block %d targetaddr %08x\n", fileRelativeSector, targetaddr);
+        bl->targetAddr = targetaddr;
         bl->payloadSize = UF2_FIRMWARE_BYTES_PER_SECTOR;
         bl->flags = UF2_FLAG_FAMILYID;
         bl->familyID = BOARD_UF2_FAMILY_ID;
@@ -808,9 +816,8 @@ int uf2_write_header(void)
  * 512 : write is successful (BPB_SECTOR_SIZE == 512)
  *   0 : is busy with flashing, tinyusb stack will call write_block again with the same parameters later on
  */
-int uf2_write_block (uint32_t block_no, uint8_t *data, WriteState *state)
+int uf2_write_block (uint32_t lbaaddr, uint8_t *data, WriteState *state)
 {
-  (void) block_no;
   UF2_Block *bl = (void*) data;
 
   if ( !is_uf2_block(bl) )
@@ -821,12 +828,10 @@ int uf2_write_block (uint32_t block_no, uint8_t *data, WriteState *state)
   if (bl->familyID == BOARD_UF2_FAMILY_ID)
   {
     // generic family ID
-    if (bl->blockNo ==1)
-    {
-      printf("Writing UF2 block %d %d/%d %dB target addr %08x\n", block_no, bl->blockNo+1, bl->numBlocks, bl->payloadSize, bl->targetAddr);
 
-      board_flash_write(bl->blockNo*256, bl->data, bl->payloadSize, false);
-    }
+    printf("Writing UF2 block %d/%d %dB target addr %08x\n", bl->blockNo+1, bl->numBlocks, bl->payloadSize, bl->targetAddr);
+    board_flash_write(bl->blockNo*256, bl->data, bl->payloadSize, false);
+
     // also store address in header block
     blockaddresses[bl->blockNo] = bl->targetAddr;
   }else
