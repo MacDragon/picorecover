@@ -137,10 +137,10 @@ void board_flash_init(void);
 uint32_t board_flash_size(void);
 
 // Read from flash
-void board_flash_read (uint32_t addr, void* buffer, uint32_t len);
+void board_flash_read (uint32_t addr, void* buffer, uint32_t len, bool header);
 
 // Write to flash
-void board_flash_write(uint32_t addr, void const *data, uint32_t len);
+void board_flash_write(uint32_t addr, void const *data, uint32_t len, bool header);
 
 // Flush/Sync flash contents
 void board_flash_flush(void);

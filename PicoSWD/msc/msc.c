@@ -252,6 +252,10 @@ void tud_msc_write10_complete_cb(uint8_t lun)
       // getting here is an indicator of error
       //while(1) {}
       tud_disconnect();
+
+      // store the header data so we have valid data in storage.
+      uf2_write_header();
+
     }
   }
 }

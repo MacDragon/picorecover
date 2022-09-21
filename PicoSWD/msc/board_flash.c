@@ -25,14 +25,17 @@
 #include "board_api.h"
 #include "tusb.h" // for logging
 #include "hardware/flash.h"
+#include "uf2.h"
 
-#define FLASH_STORAGEBLOCKS (385)
+#define FLASH_STORAGEBLOCKS (384) // 1.5MB. 6144 256byte pages   6144*4 = 24576bytes for addresses. = 6 4096k pages.
+#define FLASH_ADDRESSBLOCKS (6+1) //  enough blocks to store all addresses + a header for metadata.
 
-#define FLASH_STORAGE_SIZE (4096*FLASH_STORAGEBLOCKS) // must be flash sector size 256 aligned and whole number of flash erase sectors for simplicity
+#define FLASH_STORAGE_SIZE (4096*(FLASH_STORAGEBLOCKS+FLASH_ADDRESSBLOCKS)) // must be flash sector size 256 aligned and whole number of flash erase sectors for simplicity
 
 #define FLASH_TARGET_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_STORAGE_SIZE)
 
-static bool erased[FLASH_STORAGEBLOCKS];
+static bool erased[FLASH_ADDRESSBLOCKS+FLASH_STORAGEBLOCKS];
+static bool firsterased;
 
 //--------------------------------------------------------------------+
 //
@@ -40,8 +43,16 @@ static bool erased[FLASH_STORAGEBLOCKS];
 void board_flash_init(void)
 {
   // init is already performed by bootloader.
-  printf("Resetting flash drive for new upload\n");
+  printf("Resetting flash storage for new upload\n");
   memset(erased, 0, sizeof erased);
+  firsterased = false;
+  uint8_t *data=(uint8_t*)XIP_BASE + PICO_FLASH_SIZE_BYTES - FLASH_STORAGE_SIZE;
+  #if 0
+  printf("Header data\n");
+  DumpHex(data+4096*6, 256);
+  printf("Block address data\n");
+  DumpHex(data, 384);
+  #endif
   #if 0
   printf("Setting test data\n");
   flash_range_erase(FLASH_TARGET_OFFSET, FLASH_STORAGE_SIZE);
@@ -62,10 +73,12 @@ uint32_t board_flash_size(void)
   return FLASH_STORAGE_SIZE;
 }
 
-void board_flash_read(uint32_t addr, void* buffer, uint32_t len)
+void board_flash_read(uint32_t addr, void* buffer, uint32_t len, bool header)
 {
   printf("Read from %lu:%lu\n", addr, len);
   addr = XIP_BASE + PICO_FLASH_SIZE_BYTES - FLASH_STORAGE_SIZE + addr;
+  if ( !header )
+    addr+=(FLASH_ADDRESSBLOCKS*4096);
   memcpy(buffer, (void*)addr, len);
 }
 
@@ -74,27 +87,42 @@ void board_flash_flush(void)
   //na, nothing cashed.
 }
 
-void board_flash_write (uint32_t addr, void const *data, uint32_t len)
+void board_flash_write(uint32_t addr, void const *data, uint32_t len, bool header)
 {
     uint32_t block = addr >>12;
 
-    if ( block >= FLASH_STORAGEBLOCKS )
+    if ( ( !header && block >= FLASH_STORAGEBLOCKS ) || ( header && block >= FLASH_ADDRESSBLOCKS) )
     {
         printf("write outside storage area!\n");
         return;
     }
 
+    if (!header)
+    {
+      block+=FLASH_ADDRESSBLOCKS;
+      addr+=(FLASH_ADDRESSBLOCKS*4096);
+    }
+
     if ( !erased[block] )
     {
+      // if first erase, clear the header address data ready, also flags data as invalid upon first write.
+      // else, if quite, data is still intact.
+      if ( !firsterased )
+      {
+        printf("erasing metadata storage\n");
+        flash_range_erase(FLASH_TARGET_OFFSET, 4096*FLASH_ADDRESSBLOCKS);
+        firsterased = true;
+      }
+
       uint32_t eraseaddr = FLASH_TARGET_OFFSET + 4096*block;
       printf("erasing block %d before write at %08x\n", block, eraseaddr);
       erased[block] = true;
-      //flash_range_erase(FLASH_TARGET_OFFSET + 4096*block, 4096);
+      flash_range_erase(FLASH_TARGET_OFFSET + 4096*block, 4096);
     }
 
     printf("Write to %08x:%lu, block %d\n", addr, len, block);
     {
-        flash_range_program(FLASH_TARGET_OFFSET + addr, data, 256);
+        flash_range_program(FLASH_TARGET_OFFSET + addr, data, header?len:256);
     }
 }
 

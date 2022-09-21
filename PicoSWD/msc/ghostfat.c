@@ -115,6 +115,7 @@ typedef struct FileContent {
   uint16_t cluster_end;
 } FileContent_t;
 
+
 //--------------------------------------------------------------------+
 //
 //--------------------------------------------------------------------+
@@ -180,8 +181,22 @@ static FileContent_t info[] = {
     {.name = "FAVICON ICO", .content = favicon_data, .size = favicon_len            },
 #endif
     // current.uf2 must be the last element and its content must be NULL
-    {.name = "CURRENT UF2", .longname = "Currentfile.uf2", .content = NULL       , .size = 0                       },
+    {.name = "NODATA     ", .content = NULL       , .size = 0                       },
 };
+
+uint32_t blockaddresses[((384*4096)/256)]; // size has to be multiple of 256
+typedef union {
+  uint8_t writeblock[4096]; // make the structure be 4k
+  struct {
+    char shortname[11];
+    char longname[234];
+    uint32_t blocks;
+    uint32_t crc32;
+    uint32_t familyid;
+  };
+} headerdata_t;
+
+headerdata_t headerdata;
 
 enum {
   NUM_FILES = sizeof(info) / sizeof(info[0]),
@@ -295,8 +310,25 @@ void uf2_init(void)
   // TODO maybe limit to application size only if possible board_flash_app_size()
   _flash_size = board_flash_size();
 
-  // update CURRENT.UF2 file size
-  info[FID_UF2].size = UF2_BYTE_COUNT;
+  // read in possible header data.
+  board_flash_read(4096*6, &headerdata, 4096, true);
+
+  if ( headerdata.shortname[0] != 0 && headerdata.shortname[0] != 0xff)
+  {
+    // we have a header!
+    info[FID_UF2].size = headerdata.blocks*512;
+    printf("Setting filesize %lu", info[FID_UF2].size);
+    memcpy(info[FID_UF2].name, headerdata.shortname, 11);
+    if ( headerdata.longname[0] != 0 && headerdata.longname[0] != 0xff)
+    {
+      memcpy(info[FID_UF2].longname, headerdata.longname, sizeof headerdata.longname);
+    }
+  }
+  else
+  {
+    // update CURRENT.UF2 file size
+    info[FID_UF2].size = 0;//UF2_BYTE_COUNT;
+  }
 
   init_starting_clusters();
 }
@@ -372,14 +404,14 @@ void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState
 
             if ( longnameposition <= (sizeof longname)/26 ) // maximum allowable length to scan in as LFN.
             {
-              printf("Longname entry start %d parts\n", longnameposition);
+              //printf("Longname entry start %d parts\n", longnameposition);
               lfnstate = gotlfn;
               memset(longname, 0, 4);
               memset(longname+4, 0xff, sizeof longname-4);
             }
             else
             {
-              printf("Longname entry start %d parts is too long, ignoring\n", longnameposition);
+              //printf("Longname entry start %d parts is too long, ignoring\n", longnameposition);
               lfnstate = nolfn;
             }
             longnamechecksum = lfn->alias_checksum;
@@ -396,11 +428,11 @@ void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState
                 memcpy(longname+(longnameposition-1)*26+10+12, lfn->name11_12, 4);
                 if (longnameposition == 1)
                 {
-                  printf("Longname entry complete\n");
+                  //printf("Longname entry complete\n");
                   lfnstate = fulllfn;
                 } else
                 {
-                  printf("Longname entry %d\n", lfn->id & 0b1111);
+                  //printf("Longname entry %d\n", lfn->id & 0b1111);
                   longnameposition--;
                 }
             } else
@@ -429,7 +461,15 @@ void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState
         for ( int i=0;i<NUM_FILES;i++)
         {
             if ( memcmp(info[i].name,d->name, 11) == 0 )
-              existing = true;
+            {
+              if ( d->updateTime == COMPILE_DOS_TIME && d->updateDate == COMPILE_DOS_DATE )
+              {
+                existing = true;
+              } else
+              {
+                printf("Existing file, but timestamp changed, overwritten?\n");
+              }
+            }
         }
 
         if ( !existing )
@@ -443,38 +483,55 @@ void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState
           for ( int i=0;i<3;i++)
             if ( extention[i] == 0x20 ) extention[i] = 0;
           
+          uint8_t sum;
+          uint8_t i;
+          // https://www.kernel.org/doc/html/latest/filesystems/vfat.html
+          for (sum = i = 0; i < 11; i++) {
+            sum = (((sum&1)<<7)|((sum&0xfe)>>1)) + d->name[i];
+          }
+
+          if ( sum != longnamechecksum )
+          {
+            lfnstate == nolfn;
+          }
+
           // realistically a uf2 file is not going to be smaller than 4k, eliminates mac directory helper files.
           if ( strcmp(extention, "UF2") == 0 && !(d->attrs & 0x02) && d->size > 0 )
           {
             printf("UF2 File name entry %s.%s size %d\n", name, extention, d->size);
-            
-            uint8_t sum;
-            uint8_t i;
-            // https://www.kernel.org/doc/html/latest/filesystems/vfat.html
-            for (sum = i = 0; i < 11; i++) {
-              sum = (((sum&1)<<7)|((sum&0xfe)>>1)) + d->name[i];
+            memcpy(info[NUM_FILES-1].name, d->name, 11);
+            memcpy(headerdata.shortname, d->name, 11);
+            if ( lfnstate == fulllfn )
+            {
+              memcpy(info[NUM_FILES-1].longname, longname, sizeof longname);
+              memcpy(headerdata.longname, longname, sizeof longname);
             }
 
-            if ( lfnstate == fulllfn && sum == longnamechecksum )
-            {
-                printf("Longname : ");
-                int i;
-                for ( i = 0; i<sizeof longname; i+=2 )
-                {
-                  if ( longname[i] == 0 || longname[i] == 0xff )
-                    break;
-                  printf("%c", longname[i]);
-                }
-                printf(" length %d\n", i);
-                memcpy(info[NUM_FILES-1].longname, longname, sizeof longname);
-            }
-            memcpy(info[NUM_FILES-1].name, d->name, 11);
             // do we have a long name?
             state->gotname = true;
-            return; // we got out name!
           } else
           {
-            printf("File name entry %s.%s size %d\n", name, extention, d->size);
+            //printf("File name entry %s.%s size %d lfn:%c\n", name, extention, d->size, lfnstate == fulllfn?'y':'n');
+          }
+          #if 0
+          if ( lfnstate == fulllfn )
+          {
+              printf("Longname : ");
+              int i;
+              for ( i = 0; i<sizeof longname; i+=2 )
+              {
+                if ( longname[i] == 0 || longname[i] == 0xff )
+                  break;
+                printf("%c", longname[i]);
+              }
+              printf(" length %d\n", i);
+          }
+          #endif
+
+          if (state->gotname)
+          {
+            printf("Name set\n");
+            return; // we got out name get out of here!
           }
         }
         lfnstate = nolfn; // reset long name
@@ -483,9 +540,9 @@ void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState
       count++;
       d++;
     } 
-
-
 }
+
+bool showndump = false;
 
 void uf2_read_block (uint32_t block_no, uint8_t *data)
 {
@@ -571,7 +628,7 @@ void uf2_read_block (uint32_t block_no, uint8_t *data)
     DirEntry *d = (void*) data;                   // pointer to next free DirEntry this sector
     int remainingEntries = DIRENTRIES_PER_SECTOR; // remaining count of DirEntries this sector
 
-    printf("remainingdirEntries %d\n", remainingEntries);
+    //printf("remainingdirEntries %d\n", remainingEntries);
 
     uint32_t startingFileIndex;
 
@@ -603,6 +660,8 @@ void uf2_read_block (uint32_t block_no, uint8_t *data)
 #endif
       uint32_t const startCluster = info[fileIndex].cluster_start;
 
+      FileContent_t const *inf = &info[fileIndex];
+
       if ( fileIndex == NUM_FILES-1 && info[fileIndex].longname[0] != 0 ) // if our custom file has a long filename, add it.
       {
           uint8_t sum;
@@ -611,21 +670,50 @@ void uf2_read_block (uint32_t block_no, uint8_t *data)
           for (sum = i = 0; i < 11; i++) {
             sum = (((sum&1)<<7)|((sum&0xfe)>>1)) + info[fileIndex].name[i];
           }
-        
+
           int namelen=0;
-          printf("Adding Longname : ");
+          //printf("Adding Longname : ");
           for ( ; namelen<sizeof info[fileIndex].longname; namelen+=2 )
           {
             if ( info[fileIndex].longname[namelen] == 0 || info[fileIndex].longname[namelen] == 0xff )
               break;
-            printf("%c", info[fileIndex].longname[namelen]);
+            //printf("%c", info[fileIndex].longname[namelen]);
           }
+          uint8_t entries = (namelen+25)/26;
+          //printf(" length %d in %d entries, setting SFN\n", namelen, entries);
 
-          printf(" length %d\n", namelen);
-      }
+          bool first = true;
+          while ( entries > 0 )
+          {
+            LFNDirEntry * lfn = (void*)d;
 
-      FileContent_t const *inf = &info[fileIndex];
-      padded_memcpy(d->name, inf->name, 11);
+            lfn->id = entries;
+            if ( first )
+            {
+              lfn->id |= (1 << 6);
+              first = false;
+            }
+            lfn->alias_checksum = sum;
+            lfn->attr = 0xf;
+            lfn->reserved = 0;
+            lfn->start[0] = 0;
+            lfn->start[1] = 0;
+
+            char *namepos = &info[fileIndex].longname[(entries-1)*26];
+
+            memcpy(lfn->name0_4, namepos, 10);
+            memcpy(lfn->name5_10, namepos+10, 12);
+            memcpy(lfn->name11_12, namepos+10+12, 4);
+            d++;
+            entries--;
+
+            // if saving a LFN, then set the SFN to something the OS will overwrite so we can catch it.
+            // set a fake SFN to get OS to overwrite it so we can detect the UF2 filename more easily later.
+            padded_memcpy(d->name, info[fileIndex].name, 11);
+
+          } 
+      } else
+        padded_memcpy(d->name, inf->name, 11);
       d->createTimeFine   = COMPILE_SECONDS_INT % 2 * 100;
       d->createTime       = COMPILE_DOS_TIME;
       d->createDate       = COMPILE_DOS_DATE;
@@ -634,8 +722,19 @@ void uf2_read_block (uint32_t block_no, uint8_t *data)
       d->updateTime       = COMPILE_DOS_TIME;
       d->updateDate       = COMPILE_DOS_DATE;
       d->startCluster     = startCluster & 0xFFFF;
-      d->size             = (inf->content ? inf->size : UF2_BYTE_COUNT);
+      printf("file %d size %d\n", fileIndex, inf->size);
+      d->size             = inf->size; //(inf->content ? inf->size : UF2_BYTE_COUNT);
     }
+
+#if 0
+    if ( !showndump )
+    {
+      showndump = true;
+      printf("Generated dir entry block\n");
+      DumpHex(data, 512);
+    }
+#endif
+
   }
   else if ( block_no < BPB_TOTAL_SECTORS )
   {
@@ -684,7 +783,7 @@ void uf2_read_block (uint32_t block_no, uint8_t *data)
         bl->flags = UF2_FLAG_FAMILYID;
         bl->familyID = BOARD_UF2_FAMILY_ID;
 
-        board_flash_read(addr, bl->data, bl->payloadSize);
+        board_flash_read(addr, bl->data, bl->payloadSize, false);
       }
     }
   }
@@ -693,6 +792,14 @@ void uf2_read_block (uint32_t block_no, uint8_t *data)
 /*------------------------------------------------------------------*/
 /* Write UF2
  *------------------------------------------------------------------*/
+
+int uf2_write_header(void)
+{
+    printf("Storing header data\n");
+    board_flash_write(0, blockaddresses, sizeof blockaddresses, true);
+    board_flash_write(4096*6, &headerdata, sizeof headerdata, true);
+    //wDumpHex(blockaddresses, 384);
+}
 
 /**
  * Write an uf2 block wrapped by 512 sector.
@@ -713,9 +820,15 @@ int uf2_write_block (uint32_t block_no, uint8_t *data, WriteState *state)
 
   if (bl->familyID == BOARD_UF2_FAMILY_ID)
   {
-    //printf("Writing UF2 block %d %d/%d %dB\n", block_no, bl->blockNo+1, bl->numBlocks, bl->payloadSize);
     // generic family ID
-    //board_flash_write(4096+bl->blockNo*256, bl->data, bl->payloadSize);
+    if (bl->blockNo ==1)
+    {
+      printf("Writing UF2 block %d %d/%d %dB target addr %08x\n", block_no, bl->blockNo+1, bl->numBlocks, bl->payloadSize, bl->targetAddr);
+
+      board_flash_write(bl->blockNo*256, bl->data, bl->payloadSize, false);
+    }
+    // also store address in header block
+    blockaddresses[bl->blockNo] = bl->targetAddr;
   }else
   {
     // TODO family matches VID/PID
@@ -732,6 +845,9 @@ int uf2_write_block (uint32_t block_no, uint8_t *data, WriteState *state)
         state->numBlocks = 0xffffffff;
       else
         state->numBlocks = bl->numBlocks;
+
+        headerdata.blocks = bl->numBlocks; // store the number of uf2 blocks to header data.
+        printf("Storing %d blocks to header\n", headerdata.blocks);
     }
 
     if ( bl->blockNo < MAX_BLOCKS )
