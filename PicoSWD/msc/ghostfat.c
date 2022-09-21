@@ -503,13 +503,29 @@ void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState
           // realistically a uf2 file is not going to be smaller than 4k, eliminates mac directory helper files.
           if ( strcmp(extention, "UF2") == 0 && !(d->attrs & 0x02) && d->size > 0 )
           {
-            printf("UF2 File name entry %s.%s size %d\n", name, extention, d->size);
+            printf("UF2 File name entry %s.%s size %d lfn:%c\n", name, extention, d->size, lfnstate == fulllfn?'y':'n');
             memcpy(info[NUM_FILES-1].name, d->name, 11);
             memcpy(headerdata.shortname, d->name, 11);
             if ( lfnstate == fulllfn )
             {
+              if ( lfnstate == fulllfn )
+              {
+                  printf("Longname : ");
+                  int i;
+                  for ( i = 0; i<sizeof longname; i+=2 )
+                  {
+                    if ( longname[i] == 0 || longname[i] == 0xff )
+                      break;
+                    printf("%c", longname[i]);
+                  }
+                  printf(" length %d\n", i);
+              }
               memcpy(info[NUM_FILES-1].longname, longname, sizeof longname);
               memcpy(headerdata.longname, longname, sizeof longname);
+            } else
+            {
+              memset(info[NUM_FILES-1].longname, 0x00, sizeof longname);
+              memset(headerdata.longname, 0x00, sizeof longname);
             }
 
             // do we have a long name?
