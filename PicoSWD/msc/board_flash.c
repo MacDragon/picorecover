@@ -75,7 +75,7 @@ uint32_t board_flash_size(void)
 
 void board_flash_read(uint32_t addr, void* buffer, uint32_t len, bool header)
 {
-  printf("Read %s from %lu:%lu\n", header?"header":"data", addr, len);
+  //printf("Read %s from %lu:%lu\n", header?"header":"data", addr, len);
   addr = XIP_BASE + PICO_FLASH_SIZE_BYTES - FLASH_STORAGE_SIZE + addr;
   if ( !header )
     addr+=(FLASH_ADDRESSBLOCKS*4096);

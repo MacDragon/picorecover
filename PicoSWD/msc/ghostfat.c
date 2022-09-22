@@ -565,7 +565,43 @@ void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState
 
 bool showndump = false;
 
-void uf2_read_block (uint32_t block_no, uint8_t *data)
+uint32_t uf2_get_uf2blockcount(void)
+{
+  uint32_t blockcount = 0;
+  printf("struct offset %d\n", offsetof(headerdata_t, blocks));
+  board_flash_read(4096*6+offsetof(headerdata_t, blocks), &blockcount, 4, true);
+  if ( blockcount > 384*8 ) // max possible blocks.
+    blockcount = 0;
+  headerdata.blocks = blockcount;
+  _flash_size = blockcount * UF2_FIRMWARE_BYTES_PER_SECTOR;
+  return blockcount;
+}
+
+void uf2_get_uf2block(uint32_t block_no, uint8_t *data)
+{
+    // CURRENT.UF2: generate data on-the-fly
+    uint32_t addr = BOARD_FLASH_APP_START + (block_no * UF2_FIRMWARE_BYTES_PER_SECTOR);
+    if ( addr < _flash_size ) // TODO abstract this out
+    {
+      UF2_Block *bl = (void*) data;
+      bl->magicStart0 = UF2_MAGIC_START0;
+      bl->magicStart1 = UF2_MAGIC_START1;
+      bl->magicEnd = UF2_MAGIC_END;
+      bl->blockNo = block_no;
+      bl->numBlocks = headerdata.blocks; //UF2_SECTOR_COUNT;
+      uint32_t targetaddr = 0;
+      board_flash_read(block_no*4, &targetaddr, 4, true);
+      //printf("block %d targetaddr %08x\n", block_no, targetaddr);
+      bl->targetAddr = targetaddr;
+      bl->payloadSize = UF2_FIRMWARE_BYTES_PER_SECTOR;
+      bl->flags = UF2_FLAG_FAMILYID;
+      bl->familyID = BOARD_UF2_FAMILY_ID;
+
+      board_flash_read(addr, bl->data, bl->payloadSize, false);
+    }
+}
+
+void uf2_read_fsblock (uint32_t block_no, uint8_t *data)
 {
   memset(data, 0, BPB_SECTOR_SIZE);
   uint32_t sectionRelativeSector = block_no;
@@ -789,26 +825,7 @@ void uf2_read_block (uint32_t block_no, uint8_t *data)
     }
     else
     {
-      // CURRENT.UF2: generate data on-the-fly
-      uint32_t addr = BOARD_FLASH_APP_START + (fileRelativeSector * UF2_FIRMWARE_BYTES_PER_SECTOR);
-      if ( addr < _flash_size ) // TODO abstract this out
-      {
-        UF2_Block *bl = (void*) data;
-        bl->magicStart0 = UF2_MAGIC_START0;
-        bl->magicStart1 = UF2_MAGIC_START1;
-        bl->magicEnd = UF2_MAGIC_END;
-        bl->blockNo = fileRelativeSector;
-        bl->numBlocks = headerdata.blocks; //UF2_SECTOR_COUNT;
-        uint32_t targetaddr = 0;
-        board_flash_read(fileRelativeSector*4, &targetaddr, 4, true);
-        printf("block %d targetaddr %08x\n", fileRelativeSector, targetaddr);
-        bl->targetAddr = targetaddr;
-        bl->payloadSize = UF2_FIRMWARE_BYTES_PER_SECTOR;
-        bl->flags = UF2_FLAG_FAMILYID;
-        bl->familyID = BOARD_UF2_FAMILY_ID;
-
-        board_flash_read(addr, bl->data, bl->payloadSize, false);
-      }
+        uf2_get_uf2block(fileRelativeSector, data);
     }
   }
 }

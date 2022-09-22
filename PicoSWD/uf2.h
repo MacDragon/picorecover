@@ -98,7 +98,9 @@ typedef struct {
 
 
 void uf2_init(void);
-void uf2_read_block(uint32_t block_no, uint8_t *data);
+uint32_t uf2_get_uf2blockcount(void);
+void uf2_get_uf2block(uint32_t block_no, uint8_t *data);
+void uf2_read_fsblock(uint32_t block_no, uint8_t *data);
 void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState *state);
 void uf2_reset_namestate(void);
 int  uf2_write_block(uint32_t block_no, uint8_t *data, WriteState *state);

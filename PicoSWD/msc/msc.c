@@ -129,7 +129,7 @@ int32_t tud_msc_read10_cb (uint8_t lun, uint32_t lba, uint32_t offset, void* buf
 
   while ( count < bufsize )
   {
-    uf2_read_block(lba, buffer);
+    uf2_read_fsblock(lba, buffer);
 
     lba++;
     buffer += 512;

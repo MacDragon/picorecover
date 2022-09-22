@@ -7,7 +7,6 @@
 #include "pico_hal.h"
 #include "uf2.h"
 #include "../wipe/wipe.h"
-//#include "micropythonuf2.h"
 //#include "picoprobe_config.h"
 //#include "probe.h"
 
@@ -1275,41 +1274,60 @@ int main() {
             gpio_put(LED_PIN, 1);
 
             bool processed = false;
-#if 0
+#if 1
             if ( streql(tkn1, "send" ) )
             {
                 processed = true;
-                uint32_t datasize = sizeof rp2_pico_20220618_v1_19_1_uf2;
-                if ( datasize % 512 != 0 )
                 {
-                    printf("Bad data size %dB\n", datasize); 
-                } else
-                {
-                    UF2_Block * uf2data = (UF2_Block *)rp2_pico_20220618_v1_19_1_uf2;
-                    uint32_t uf2blocks = datasize/512;
+                    UF2_Block uf2data;
+
+                    uint32_t uf2blocks = uf2_get_uf2blockcount();
                     uint32_t highaddr = 0;
                     uint32_t lowaddr = 0xffffffff;
+
+                    printf("Got uf2 data size %d in %d blocks\n", uf2blocks*512, uf2blocks);
+
                     bool baddata = false;
-                    for ( int i=0;i<uf2blocks;i++)
+                    if (uf2blocks == 0)
                     {
-                        if ( uf2data[i].magicStart0 != UF2_MAGIC_START0
-                        || uf2data[i].magicStart1 != UF2_MAGIC_START1
-                        || uf2data[i].magicEnd != UF2_MAGIC_END 
-                        || uf2data[i].numBlocks != uf2blocks 
-                        || uf2data[i].payloadSize > 256 // only allow blocks smaller than a flash write page.
-                        || uf2data[i].blockNo != i 
-                        || ( uf2data[i].flags & 0x2000 == 0x2000 && uf2data[i].familyID != PICOFAMILYID )
+                        baddata = true;
+                    } else for ( int i=0;i<uf2blocks;i++)
+                    {
+                        uf2_get_uf2block(i, (void*)&uf2data);
+                        if ( uf2data.magicStart0 != UF2_MAGIC_START0
+                        || uf2data.magicStart1 != UF2_MAGIC_START1
+                        || uf2data.magicEnd != UF2_MAGIC_END 
+                        || uf2data.numBlocks != uf2blocks 
+                        || uf2data.payloadSize > 256 // only allow blocks smaller than a flash write page.
+                        || uf2data.blockNo != i 
+                        || ( uf2data.flags & 0x2000 == 0x2000 && uf2data.familyID != PICOFAMILYID )
                         )
                         {
-                            break;
+                            printf("Bad data in block %d\n", i);
+#if 0
+                            printf("uf2data.magicStart0 %08x ", uf2data.magicStart0);
+                        || uf2data.magicStart1 != UF2_MAGIC_START1
+                        || uf2data.magicEnd != UF2_MAGIC_END 
+                        || uf2data.numBlocks != uf2blocks 
+                        || uf2data.payloadSize > 256 // only allow blocks smaller than a flash write page.
+                        || uf2data.blockNo != i 
+                        || ( uf2data.flags & 0x2000 == 0x2000 && uf2data.familyID != PICOFAMILYID )
+                            )
+#endif
                             baddata = true;
+                            break;
                         }
-                        uint32_t curaddr = uf2data[i].targetAddr;
+                        uint32_t curaddr = uf2data.targetAddr;
                         if ( curaddr > highaddr )
+                        {
                             highaddr = curaddr;
+                        }
                         if ( curaddr < lowaddr )
+                        {
                             lowaddr = curaddr;
+                        }
                     }
+
                     highaddr = (highaddr+256); // actual end of data will be a page later.
                     if ( highaddr % 4096 != 0)
                         highaddr = highaddr + ( 4096 - highaddr % 4096 ); // pad upto next 4k boundary.
@@ -1341,6 +1359,7 @@ int main() {
                             
                             for ( int i=0;i<uf2blocks;i++)
                             {
+                                uf2_get_uf2block(i, (void*)&uf2data);
                                 int32_t perc = ( ( 100000/(uf2blocks-1)) * i) / 1000;
 
                                 if ( perc != lastperc )
@@ -1349,18 +1368,18 @@ int main() {
                                     printf("Progress %d%%\n", perc);
                                 }
 
-                                if ( uf2data[i].flags & 0x1 != 0 )
+                                if ( uf2data.flags & 0x1 != 0 )
                                 {
                                     printf("UF2 block %d not for flash, ignoring", i);
                                     continue;
                                 }
                                 //printf("UF2 block %d, %08x:%d(%03x)\n", i, uf2data[i].targetAddr, uf2data[i].payloadSize, uf2data[i].payloadSize);
 
-                                uint32_t sendsize = uf2data[i].payloadSize; // uf2 block size.
-                                uint32_t crccalc = crc32b(uf2data[i].data, sendsize);
+                                uint32_t sendsize = uf2data.payloadSize; // uf2 block size.
+                                uint32_t crccalc = crc32b(uf2data.data, sendsize);
                                 //printf("Data send %dB crc32 %08x\n", sendsize, crc);
-                                probe_write_memory(0x20038000+offsetof(shareddata_t, addr), (uint8_t*)&uf2data[i].targetAddr, 4);
-                                probe_write_memory(0x20038000+offsetof(shareddata_t, data), uf2data[i].data, sendsize);
+                                probe_write_memory(0x20038000+offsetof(shareddata_t, addr), (uint8_t*)&uf2data.targetAddr, 4);
+                                probe_write_memory(0x20038000+offsetof(shareddata_t, data), uf2data.data, sendsize);
                                 probe_write_memory(0x20038000+offsetof(shareddata_t, size), (uint8_t*)&sendsize, 4);
                                 probe_write_memory(0x20038000+offsetof(shareddata_t, crc), (uint8_t*)&crccalc, 4);
                                 probe_send_instruction(6);
