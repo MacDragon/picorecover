@@ -295,6 +295,7 @@ bool tud_msc_start_stop_cb(uint8_t lun, uint8_t power_condition, bool start, boo
     {
       printf("Eject requested\n");
       tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3A, 0x00);
+      closeusb = true; // hack. find proper way to eject?
       // unload disk storage
       return false;
     }
