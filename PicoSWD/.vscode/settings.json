@@ -19,7 +19,8 @@
         "ranges": "c",
         "utility": "c",
         "string": "c",
-        "typeinfo": "c"
+        "typeinfo": "c",
+        "pico_display.hpp": "c"
     }
 }
 

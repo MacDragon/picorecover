@@ -15,7 +15,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
  
 # Link the Project to a source file (step 4.6)
-add_executable(PicoSWD source.c led.c)
+add_executable(PicoSWD source.cpp led.c)
  
 add_subdirectory(littlefs-lib)
 add_subdirectory(msc)
@@ -24,7 +24,7 @@ target_include_directories(PicoSWD PRIVATE ${../../wipe/})
 target_include_directories(PicoSWD PRIVATE .)
 
 # Link the Project to an extra library (pico_stdlib)
-target_link_libraries(PicoSWD pico_stdlib hardware_pio littlefs-lib tinyusb_device tinyusb_board)
+target_link_libraries(PicoSWD pico_stdlib hardware_pio littlefs-lib tinyusb_device tinyusb_board hardware_spi hardware_pwm hardware_dma rgbled pico_display pico_graphics st7789 button)
 
 # Initalise the SDK
 pico_sdk_init()
@@ -32,8 +32,15 @@ pico_sdk_init()
 # Include required libraries
 # This assumes `pimoroni-pico` is stored alongside your project
 include(common/pimoroni_i2c)
-include(libraries/pico_explorer/pico_explorer)
-# include(libraries/pico_display/pico_display)
+#include(libraries/pico_explorer/pico_explorer)
+include(libraries/pico_display/pico_display)
+include(libraries/bitmap_fonts/bitmap_fonts)
+include(libraries/hershey_fonts/hershey_fonts)
+include(common/pimoroni_bus)
+include(libraries/pico_graphics/pico_graphics)
+include(drivers/st7789/st7789)
+include(drivers/rgbled/rgbled)
+include(drivers/button/button)
 
 set(DBG_PIN_COUNT=4)
 

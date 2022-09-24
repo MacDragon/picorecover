@@ -9,6 +9,34 @@
 #include "../wipe/wipe.h"
 //#include "picoprobe_config.h"
 //#include "probe.h"
+#include "pico_display.hpp"
+#include "drivers/st7789/st7789.hpp"
+#include "libraries/pico_graphics/pico_graphics.hpp"
+#include "rgbled.hpp"
+#include "button.hpp"
+
+extern "C" {
+    int usbload(void);
+}
+
+
+namespace  pimoroni 
+{
+// Display driver
+ST7789 st7789(PicoDisplay::WIDTH, PicoDisplay::HEIGHT, ROTATE_0, false, get_spi_pins(BG_SPI_FRONT));
+
+// Graphics library - in RGB332 mode you get 256 colours and optional dithering for ~32K RAM.
+PicoGraphics_PenRGB332 graphics(st7789.width, st7789.height, nullptr);
+
+// RGB LED
+RGBLED led(PicoDisplay::LED_R, PicoDisplay::LED_G, PicoDisplay::LED_B);
+
+// And each button
+Button button_a(PicoDisplay::A);
+Button button_b(PicoDisplay::B);
+Button button_x(PicoDisplay::X);
+Button button_y(PicoDisplay::Y);
+}
 
 #define PROBE_PIN_OFFSET 2
 #define PROBE_PIN_SWCLK PROBE_PIN_OFFSET + 0 // 2
@@ -481,8 +509,9 @@ bool probe_write_dp(uint32_t reg, uint32_t writeval)
         res = probe_write_reg(true, reg, writeval);
     }
 
-    return res = E_OK?true:false;
+    return res = E_OK?E_OK:E_FAULT;
 }
+
 
 bool probe_write_ap(uint32_t reg, uint32_t writeval)
 {
@@ -810,10 +839,10 @@ bool recoverboot( void )
     pico_close(file); // only used to check if recovery exists.
     pico_close(file2);
 
-    bool delete = false;
+    bool del = false;
 
     if ( file2 > 0 )
-        delete = true;
+        del = true;
 
     if ( file > 0 )
     {
@@ -823,17 +852,20 @@ bool recoverboot( void )
             if( pico_rename("/boot.py", "/boot_recover.py") < 0 )
             {
                 printf("boot.py couldn't be renamed, deleting\n");
-                delete = true;
+                del = true;
                 // rename failed, just delete the file instead.
             } else
                 printf("boot.py renamed to boot_recover.py\n");
         }
 
-        if ( delete )
+        if ( del )
             pico_remove("/boot.py");
-
+        return true;
     } else
-          printf("boot.py not found %d\n", file);
+    {
+        printf("boot.py not found %d\n", file);
+        return false;
+    }
 }
 
 bool recovermain( void )
@@ -844,10 +876,10 @@ bool recovermain( void )
     pico_close(file); // only used to check if recovery exists.
     pico_close(file2);
 
-    bool delete = false;
+    bool del = false;
 
     if ( file2 > 0 )
-        delete = true;
+        del = true;
 
     if ( file > 0 )
     {
@@ -857,13 +889,13 @@ bool recovermain( void )
             if( pico_rename("/main.py", "/main_recover.py") < 0 )
             {
                 printf("main.py couldn't be renamed, deleting\n");
-                delete = true;
+                del = true;
                 // rename failed, just delete the file instead.
             } else
                 printf("main.py renamed to main_recover.py\n");
         }
 
-        if ( delete )
+        if ( del )
             pico_remove("/main.py");
 
     } else
@@ -1082,7 +1114,86 @@ int main() {
     stdio_init_all();
 
     SEGGER_RTT_Init();
-    
+#if 0
+    const uint LEDR_PIN = 6;
+    const uint LEDG_PIN = 7;  
+    const uint LEDB_PIN = 8;
+
+    gpio_init(LEDR_PIN);
+    gpio_set_dir(LEDR_PIN, GPIO_OUT);
+    gpio_init(LEDG_PIN);
+    gpio_set_dir(LEDG_PIN, GPIO_OUT);
+    gpio_init(LEDB_PIN);
+    gpio_set_dir(LEDB_PIN, GPIO_OUT);
+    gpio_put(LEDR_PIN, 1);
+    gpio_put(LEDG_PIN, 1);
+    gpio_put(LEDB_PIN, 1);
+#endif
+
+    pimoroni::st7789.set_backlight(255);
+
+    uint8_t r = 0;
+    uint8_t g = 0;
+    uint8_t b = 0;
+
+    while(true) {
+        // detect if the A button is pressed (could be A, B, X, or Y)
+        
+        if(pimoroni::button_a.raw()) {
+            // make the led glow green
+            // parameters are red, green, blue all between 0 and 255
+            // these are also gamma corrected
+            r = 100;
+        } else
+        {   
+            r = 0;
+        }
+
+        if(pimoroni::button_b.raw()) {
+            // make the led glow green
+            // parameters are red, green, blue all between 0 and 255
+            // these are also gamma corrected
+            g = 100;
+        } else
+        {   
+            g = 0;
+        }
+
+
+        if(pimoroni::button_x.raw()) {
+            // make the led glow green
+            // parameters are red, green, blue all between 0 and 255
+            // these are also gamma corrected
+            b = 100;
+        } else
+        {   
+            b = 0;
+        }
+
+        pimoroni::led.set_rgb(r, g, b);
+
+        // set the colour of the pen
+        // parameters are red, green, blue all between 0 and 255
+        pimoroni::graphics.set_pen(30, 40, 50);
+
+        // fill the screen with the current pen colour
+        pimoroni::graphics.clear();
+
+        // draw a box to put some text in
+        pimoroni::graphics.set_pen(10, 20, 30);
+        pimoroni::Rect text_rect(10, 10, 150, 150);
+        pimoroni::graphics.rectangle(text_rect);
+
+        // write some text inside the box with 10 pixels of margin
+        // automatically word wrapping
+        text_rect.deflate(10);
+        pimoroni::graphics.set_pen(110, 120, 130);
+        pimoroni::graphics.text("This is a message", pimoroni::Point(text_rect.x, text_rect.y), text_rect.w);
+
+        // now we've done our drawing let's update the screen
+        pimoroni::st7789.update(&pimoroni::graphics);
+    }
+
     const uint LED_PIN = PICO_DEFAULT_LED_PIN;
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
@@ -1293,7 +1404,7 @@ int main() {
                         baddata = true;
                     } else for ( int i=0;i<uf2blocks;i++)
                     {
-                        uf2_get_uf2block(i, (void*)&uf2data);
+                        uf2_get_uf2block(i, (uint8_t*)&uf2data);
                         if ( uf2data.magicStart0 != UF2_MAGIC_START0
                         || uf2data.magicStart1 != UF2_MAGIC_START1
                         || uf2data.magicEnd != UF2_MAGIC_END 
@@ -1359,7 +1470,7 @@ int main() {
                             
                             for ( int i=0;i<uf2blocks;i++)
                             {
-                                uf2_get_uf2block(i, (void*)&uf2data);
+                                uf2_get_uf2block(i, (uint8_t*)&uf2data);
                                 int32_t perc = ( ( 100000/(uf2blocks-1)) * i) / 1000;
 
                                 if ( perc != lastperc )
