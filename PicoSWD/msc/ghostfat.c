@@ -193,6 +193,7 @@ typedef union {
     uint32_t blocks;
     uint32_t crc32;
     uint32_t familyid;
+    uint32_t headercrc;
   };
 } headerdata_t;
 
@@ -565,6 +566,64 @@ void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState
 
 bool showndump = false;
 
+bool uf2_get_uf2filename(char *str, uint32_t strlen)
+{
+  headerdata_t header;
+  board_flash_read(4096*6, &header, sizeof header, true);
+
+  memset(str, 0, strlen);
+
+  if ( header.blocks == 0 )
+    return false; // no blocks, so we have no file and thus no name.
+
+  if ( header.familyid != PICOFAMILYID)
+    return false;
+
+  int namelen = 0;
+  //printf("Adding Longname : ");
+  for (int position = 0; position<sizeof header.longname; position+=2 )
+  {
+    if ( header.longname[position] == 0 || header.longname[position] == 0xff )
+      break;
+    if ( header.longname[position+1] == 0 )
+    {
+      str[namelen] = header.longname[position];
+      namelen++;
+    }
+  }
+
+  if ( namelen > 0 )
+  {
+    return true;
+  }
+
+  for ( ; namelen <8 && header.shortname[namelen] != 0x20; namelen++)
+  {
+    str[namelen] = header.shortname[namelen];
+  }
+
+  if ( namelen ) // we got a filename, check if there's an extention.
+  {
+    if (header.shortname[8] != 0x20)
+    {
+      str[namelen++] = '.';
+      for ( int i=0;i<3;i++)
+      {
+        if (header.shortname[8+i] == 0x20)
+          break;
+        str[namelen++] = header.shortname[8+i];
+      }
+    }
+    return true;
+  } else
+  {
+    return false;
+  }
+
+  // if here we had no longname, check shortname.
+
+}
+
 uint32_t uf2_get_uf2blockcount(void)
 {
   uint32_t blockcount = 0;
@@ -837,6 +896,7 @@ void uf2_read_fsblock (uint32_t block_no, uint8_t *data)
 int uf2_write_header(void)
 {
     printf("Storing header data\n");
+    headerdata.familyid = PICOFAMILYID;
     board_flash_write(0, blockaddresses, sizeof blockaddresses, true);
     board_flash_write(4096*6, &headerdata, sizeof headerdata, true);
     //wDumpHex(blockaddresses, 384);

@@ -1,5 +1,8 @@
 #include <string.h>
 #include <ctype.h>
+#include "ring_buffer.hpp"
+
+extern "C" {
 #include "source.h"
 #include "SEGGER_RTT.h"
 #include "hardware/structs/systick.h"
@@ -7,6 +10,7 @@
 #include "pico_hal.h"
 #include "uf2.h"
 #include "../wipe/wipe.h"
+}
 //#include "picoprobe_config.h"
 //#include "probe.h"
 #include "pico_display.hpp"
@@ -19,9 +23,9 @@ extern "C" {
     int usbload(void);
 }
 
+using namespace pimoroni;
+using namespace std;
 
-namespace  pimoroni 
-{
 // Display driver
 ST7789 st7789(PicoDisplay::WIDTH, PicoDisplay::HEIGHT, ROTATE_0, false, get_spi_pins(BG_SPI_FRONT));
 
@@ -36,7 +40,6 @@ Button button_a(PicoDisplay::A);
 Button button_b(PicoDisplay::B);
 Button button_x(PicoDisplay::X);
 Button button_y(PicoDisplay::Y);
-}
 
 #define PROBE_PIN_OFFSET 2
 #define PROBE_PIN_SWCLK PROBE_PIN_OFFSET + 0 // 2
@@ -1106,6 +1109,29 @@ bool streql( const char * str1, const char * str2 )
 	return ! ( strcmp(str1, str2) );
 }
 
+ring_buffer<string> output(9);
+
+void logstr(const char * str)
+{
+    output.push_back(string(str) );
+
+    for ( int i = 0;i<output.size();i++ )
+    {
+        graphics.set_pen(0, 0, 0);
+        Rect text_rect(0, i*15, 240, 15);
+        graphics.rectangle(text_rect);
+        text_rect.deflate(2);
+        graphics.set_pen(110, 120, 130);
+        char str[40];
+        graphics.set_clip(text_rect);
+        graphics.text(output[i].c_str(), Point(text_rect.x, text_rect.y), text_rect.w);
+        graphics.remove_clip();
+    }
+
+    // now we've done our drawing let's update the screen
+    st7789.update(&graphics);
+}
+
 int main() {
 #ifndef PICO_DEFAULT_LED_PIN
 #warning requires a board with a regular LED
@@ -1130,69 +1156,18 @@ int main() {
     gpio_put(LEDB_PIN, 1);
 #endif
 
-    pimoroni::st7789.set_backlight(255);
+    st7789.set_backlight(255);
 
     uint8_t r = 0;
     uint8_t g = 0;
     uint8_t b = 0;
 
-    while(true) {
-        // detect if the A button is pressed (could be A, B, X, or Y)
-        
-        if(pimoroni::button_a.raw()) {
-            // make the led glow green
-            // parameters are red, green, blue all between 0 and 255
-            // these are also gamma corrected
-            r = 100;
-        } else
-        {   
-            r = 0;
-        }
+    graphics.set_pen(0, 0, 0);
+    graphics.clear();
+    st7789.update(&graphics);
+    led.set_rgb(0,0,0);
 
-        if(pimoroni::button_b.raw()) {
-            // make the led glow green
-            // parameters are red, green, blue all between 0 and 255
-            // these are also gamma corrected
-            g = 100;
-        } else
-        {   
-            g = 0;
-        }
-
-
-        if(pimoroni::button_x.raw()) {
-            // make the led glow green
-            // parameters are red, green, blue all between 0 and 255
-            // these are also gamma corrected
-            b = 100;
-        } else
-        {   
-            b = 0;
-        }
-
-        pimoroni::led.set_rgb(r, g, b);
-
-        // set the colour of the pen
-        // parameters are red, green, blue all between 0 and 255
-        pimoroni::graphics.set_pen(30, 40, 50);
-
-        // fill the screen with the current pen colour
-        pimoroni::graphics.clear();
-
-        // draw a box to put some text in
-        pimoroni::graphics.set_pen(10, 20, 30);
-        pimoroni::Rect text_rect(10, 10, 150, 150);
-        pimoroni::graphics.rectangle(text_rect);
-
-        // write some text inside the box with 10 pixels of margin
-        // automatically word wrapping
-        text_rect.deflate(10);
-        pimoroni::graphics.set_pen(110, 120, 130);
-        pimoroni::graphics.text("This is a message", pimoroni::Point(text_rect.x, text_rect.y), text_rect.w);
-
-        // now we've done our drawing let's update the screen
-        pimoroni::st7789.update(&pimoroni::graphics);
-    }
+    logstr("startup.");
 
     const uint LED_PIN = PICO_DEFAULT_LED_PIN;
     gpio_init(LED_PIN);
@@ -1234,7 +1209,21 @@ int main() {
         printf("No local file system"); 
     }
 #endif
+
+    char filename[139];
+
+    if ( uf2_get_uf2filename(filename, sizeof filename) )
+    {
+        logstr(filename);
+    } else
+    {
+        logstr("No file");
+    }
+
+
     printf("Enter Command (connect to start) :\n");
+
+    logstr("Press button");
 
 	uint8_t charcount = 0;
     char str[61] = { 0 };
@@ -1248,9 +1237,7 @@ int main() {
 		if ( read == 0 )
 		{
 			continue; // nothing to do this loop, return to start.
-		}
-
-		if ( read == 8 || read == 127)
+		} else if ( read == 8 || read == 127)
 		{
 			if ( charcount > 0 )
 			{
@@ -1258,8 +1245,7 @@ int main() {
 				str[charcount] = 0;
 				str[charcount+1] = 0;
 			}
-		} else
-		if ( !( read == '\n' || read == '\r') )
+		} else if ( !( read == '\n' || read == '\r') )
 		{
 			if ( read >= 32 && read <= 128) // only process printable charecters.
 			{
@@ -1273,6 +1259,20 @@ int main() {
 			endline = true;
 			printf("\r\n");
 		}
+
+        // check button presses for possible commands.
+
+        if(button_a.read())
+        {
+            strcpy(str, "usbload");
+            charcount = strlen(str);
+            endline = true;
+        }
+#if 0
+        if(button_b.read())
+        if(button_x.read())
+        if(button_y.read())
+#endif
 
 #define TOKENLENGTH   12
 
@@ -1523,8 +1523,10 @@ int main() {
 
             if ( streql(tkn1, "usbload" ) )
             {
+                logstr("usbload.");
                 usbload();
                 processed = true;
+                logstr("usb exit.");
             } 
             
             if ( !processed && connected )

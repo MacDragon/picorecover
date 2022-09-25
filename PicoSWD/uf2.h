@@ -99,6 +99,7 @@ typedef struct {
 
 void uf2_init(void);
 uint32_t uf2_get_uf2blockcount(void);
+bool uf2_get_uf2filename(char *str, uint32_t strlen);
 void uf2_get_uf2block(uint32_t block_no, uint8_t *data);
 void uf2_read_fsblock(uint32_t block_no, uint8_t *data);
 void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState *state);
