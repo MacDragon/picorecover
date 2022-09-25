@@ -96,6 +96,12 @@ typedef struct {
     uint32_t magicEnd;
 } UF2_Block;
 
+typedef enum { none, connected, notconnected, usbconnected, usbnotconnected } connectionstatus_t;
+
+void drawstatus(connectionstatus_t status, const char * statusstr);
+void logstrmulti(const char * str, bool multiline);
+void logstr(const char * str);
+
 
 void uf2_init(void);
 uint32_t uf2_get_uf2blockcount(void);

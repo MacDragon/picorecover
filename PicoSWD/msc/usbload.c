@@ -85,6 +85,7 @@ printf("usb exit\n");
 void tud_mount_cb(void)
 {
   printf("Mounted\n"); 
+  drawstatus(usbconnected, "");
   //indicator_set(STATE_USB_PLUGGED);
 }
 
@@ -92,6 +93,7 @@ void tud_mount_cb(void)
 void tud_umount_cb(void)
 {
   printf("Unmounted\n"); 
+  drawstatus(usbnotconnected, "");
   //indicator_set(STATE_USB_UNPLUGGED);
 }
 

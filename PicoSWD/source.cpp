@@ -1111,25 +1111,159 @@ bool streql( const char * str1, const char * str2 )
 
 ring_buffer<string> output(9);
 
-void logstr(const char * str)
+void logstrmulti(const char * str, bool multiline)
 {
-    output.push_back(string(str) );
+    string line = "";
+    int pos = 0;
+    int len = strlen(str);
 
+    graphics.set_font(&font8);
+
+    while ( pos < len )
+    {
+        if ( graphics.measure_text(line+str[pos], 1) > 240) // find out how much of line will fit
+        {
+            output.push_back(line);
+            line.clear();
+            if ( !multiline )
+            break;
+        }
+        line.push_back(str[pos++]);
+    }
+    if ( line.length()>0 )
+        output.push_back(line);
+
+    graphics.remove_clip();
+    graphics.set_pen(0, 0, 0);
+    Rect clear_rect(0, 0, 240, 13*9);
+    graphics.rectangle(clear_rect);
     for ( int i = 0;i<output.size();i++ )
     {
         graphics.set_pen(0, 0, 0);
-        Rect text_rect(0, i*15, 240, 15);
+        Rect text_rect(0, i*13, 240, 13);
         graphics.rectangle(text_rect);
-        text_rect.deflate(2);
+        text_rect.deflate(1);
         graphics.set_pen(110, 120, 130);
         char str[40];
         graphics.set_clip(text_rect);
-        graphics.text(output[i].c_str(), Point(text_rect.x, text_rect.y), text_rect.w);
+        graphics.text(output[i].c_str(), Point(text_rect.x, text_rect.y), text_rect.w, 1);
         graphics.remove_clip();
     }
 
     // now we've done our drawing let's update the screen
     st7789.update(&graphics);
+}
+
+void logstr(const char * str)
+{
+    logstrmulti(str, false);
+}
+
+void buttonguide(void)
+{
+    //graphics.set_font(&font8);
+    graphics.set_font(&hershey::timesrb);
+
+    graphics.remove_clip();
+    graphics.set_pen(0, 0, 0);
+    Rect clear_rect(0, 0, 240, 13*9);
+    graphics.rectangle(clear_rect);
+
+    graphics.set_pen(0, 120, 120);
+    graphics.text("Recover", Point(0, 25), 120, 0.66);
+    graphics.set_pen(120, 120, 0);
+    graphics.text("Reflash", Point(0, 105), 120, 0.66);
+    graphics.set_pen(120, 0, 120);
+    graphics.text("Blink", Point(240-graphics.measure_text("Blink", 0.66), 25), 120, 0.66);
+    graphics.set_pen(120, 60, 60);
+    graphics.text("USB Load", Point(240-graphics.measure_text("USB Load", 0.66), 105), 120, 0.66);
+
+    // now we've done our drawing let's update the screen
+    st7789.update(&graphics);
+}
+
+void drawstatus(connectionstatus_t status, const char * statusstr)
+{
+    static connectionstatus_t laststatus = none;
+
+    if ( status != laststatus || strlen (statusstr) > 0 )
+    {
+        laststatus = status;
+        graphics.remove_clip();
+        graphics.set_font(&font8);
+        graphics.set_pen(0, 0, 0);
+        Rect clear_rect(0, 13*9+1, 240, 134);
+        graphics.rectangle(clear_rect);
+        switch ( status )
+        {
+            case connected:
+            graphics.set_pen(0, 120, 0);
+            graphics.text("connected", Point(0, 13*9+1), 120, 2);
+            break;
+            case notconnected:
+            graphics.set_pen(120, 0, 0);
+            graphics.text("no device", Point(0, 13*9+1), 120, 2);
+            break;
+            case usbconnected:
+            graphics.set_pen(0, 120, 0);
+            graphics.text("usb con", Point(0, 13*9+1), 120, 2);
+            break;
+            case usbnotconnected:
+            graphics.set_pen(120, 0, 0);
+            graphics.text("no usb", Point(0, 13*9+1), 120, 2);
+            break;
+            default:
+            graphics.set_pen(120, 120, 120);
+            graphics.text("unknown", Point(0, 13*9+1), 120, 2);
+        }
+        st7789.update(&graphics);
+    }  
+}
+
+bool picoconnection = false;
+bool filesystem = false;
+uint32_t lastseen = 0;
+
+void openconnection(void)
+{
+    printf("Connecting to pico:\n");
+
+    printf("Wake pico to rescue core\n");
+    if ( !probe_rescue_reset() )
+    {
+        drawstatus(connected, "");
+        picoconnection = false;
+        return;
+    }
+
+    if ( sendhelper() )
+    {
+        int32_t result = 0;
+        probe_read_memory( 0x20038000+offsetof(shareddata_t, res), (uint8_t*)&result, sizeof result);
+        printf("Helper uploaded, checking state: %08x -> ", result);
+        if ( result == 0xabcd )
+        {
+            printf("Filesystem found\n");
+            filesystem = true;
+        }
+        else
+        {
+            printf("No filesystem\n");
+            filesystem = false;
+        }
+        drawstatus(connected, "");
+        picoconnection = true;
+        lastseen = time_us_32();
+    } else
+    {
+        drawstatus(notconnected, "");
+        picoconnection = false;
+    }
+#if 0
+    gpio_put(LED_PIN, 0);
+    sleep_ms(200);
+    gpio_put(LED_PIN, 1);
+#endif
 }
 
 int main() {
@@ -1140,6 +1274,12 @@ int main() {
     stdio_init_all();
 
     SEGGER_RTT_Init();
+
+    const uint LED3V3EN_PIN = 28;
+    gpio_init(LED3V3EN_PIN);
+    gpio_set_dir(LED3V3EN_PIN, GPIO_OUT);
+    gpio_put(LED3V3EN_PIN, 0);
+
 #if 0
     const uint LEDR_PIN = 6;
     const uint LEDG_PIN = 7;  
@@ -1169,6 +1309,9 @@ int main() {
 
     logstr("startup.");
 
+    drawstatus(none, "startup");
+    
+
     const uint LED_PIN = PICO_DEFAULT_LED_PIN;
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
@@ -1196,8 +1339,8 @@ int main() {
 
     gpio_put(LED_PIN, 1);
 
-    bool connected = false;
-    bool filesystem = false;
+    gpio_put(LED3V3EN_PIN, 1);
+
 #if 0
     int res = pico_mount(false);
 
@@ -1214,16 +1357,20 @@ int main() {
 
     if ( uf2_get_uf2filename(filename, sizeof filename) )
     {
-        logstr(filename);
+        logstrmulti(filename, true);
     } else
     {
         logstr("No file");
     }
 
+    openconnection();
 
     printf("Enter Command (connect to start) :\n");
 
-    logstr("Press button");
+    uint32_t starttime = time_us_32();
+    bool shownchoices = false;
+
+    //logstr("Press button");
 
 	uint8_t charcount = 0;
     char str[61] = { 0 };
@@ -1234,7 +1381,21 @@ int main() {
         bool endline = false;
         read = SEGGER_RTT_GetKey();
 
-		if ( read == 0 )
+        uint32_t curtick = time_us_32();
+
+        if ( !shownchoices && time_us_32() > starttime + 1000*1000*3)
+        {
+            shownchoices = true;
+            buttonguide();
+            //logstr("Press button");
+        }
+
+        if ( curtick > lastseen + 1000*1000 )
+        {
+            strcpy(str, "data");
+            charcount = strlen(str);
+            endline = true;
+        } else if ( read == 0 )
 		{
 			continue; // nothing to do this loop, return to start.
 		} else if ( read == 8 || read == 127)
@@ -1264,15 +1425,31 @@ int main() {
 
         if(button_a.read())
         {
+            strcpy(str, "recover");
+            charcount = strlen(str);
+            endline = true;
+        }
+
+        if(button_b.read())
+        {
+            strcpy(str, "reflash");
+            charcount = strlen(str);
+            endline = true;
+        }
+
+        if(button_x.read())
+        {
+            strcpy(str, "blink");
+            charcount = strlen(str);
+            endline = true;
+        }
+
+        if(button_y.read())
+        {
             strcpy(str, "usbload");
             charcount = strlen(str);
             endline = true;
         }
-#if 0
-        if(button_b.read())
-        if(button_x.read())
-        if(button_y.read())
-#endif
 
 #define TOKENLENGTH   12
 
@@ -1524,12 +1701,18 @@ int main() {
             if ( streql(tkn1, "usbload" ) )
             {
                 logstr("usbload.");
+                gpio_put(LED3V3EN_PIN, 0);
+                picoconnection = false;
+                drawstatus(usbnotconnected, "");
                 usbload();
                 processed = true;
                 logstr("usb exit.");
+                gpio_put(LED3V3EN_PIN, 1);
+                openconnection();
+                drawstatus(picoconnection?connected:notconnected, "");
             } 
             
-            if ( !processed && connected )
+            if ( !processed && picoconnection )
             {
                 processed = true;
                 if ( streql(tkn1, "boot" ) )
@@ -1594,7 +1777,8 @@ int main() {
                 {
                     printf("usb load requested\n");
                     probe_send_instruction(4);
-                    connected = false;
+                    picoconnection = false;
+                    drawstatus(notconnected, "");
                 } else 
                 {
                     processed = false;
@@ -1610,37 +1794,19 @@ int main() {
                     probe_send_instruction(0xff);
                 } else if ( streql(tkn1, "connect" ) )
                 {
-                    printf("Connecting to pico:\n");
-
-                    printf("Wake pico to rescue core\n");
-                    probe_rescue_reset();
-
-                    if ( sendhelper() )
-                    {
-                        int32_t result = 0;
-                        probe_read_memory( 0x20038000+offsetof(shareddata_t, res), (uint8_t*)&result, sizeof result);
-                        printf("Helper uploaded, checking state: %08x -> ", result);
-                        if ( result == 0xabcd )
-                        {
-                            printf("Filesystem found\n");
-                            filesystem = true;
-                        }
-                        else
-                        {
-                            printf("No filesystem\n");
-                            filesystem = false;
-                        }
-                        connected = true;
-                    } else
-                        connected = false;
-
-                    gpio_put(LED_PIN, 0);
-                    sleep_ms(200);
-                    gpio_put(LED_PIN, 1);
+                    openconnection();
                 } else if ( streql(tkn1, "data" ) )
                 {
                     int32_t result = 0;
-                    probe_read_memory( 0x20038000+offsetof(shareddata_t, data), (uint8_t*)&result, sizeof result);
+                    if ( connected && probe_read_memory( 0x20038000+offsetof(shareddata_t, data), (uint8_t*)&result, sizeof result) )
+                    {
+                        lastseen = time_us_32();
+                        drawstatus(connected, "");
+                    } else
+                    {
+                        openconnection();
+                        //connected = false;
+                    }
                     printf("data %d at %08x\n", result, 0x20038000+offsetof(shareddata_t, data));
                 }
                 else
@@ -1653,6 +1819,9 @@ int main() {
             if ( !processed )
             {
                 printf("Got unavailable command: %s\n", str);
+                char log[128];
+                snprintf(log, sizeof log, "Unknown: %s", str);
+                logstr(log);
             }
 
             charcount = 0;
