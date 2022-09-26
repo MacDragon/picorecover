@@ -65,6 +65,8 @@ SOFTWARE.
 #define UF2_FLAG_NOFLASH 0x00000001
 #define UF2_FLAG_FAMILYID 0x00002000
 
+#define PICOFAMILYID 0xe48bff56
+
 #define MAX_BLOCKS (CFG_UF2_FLASH_SIZE / 256 + 100)
 
 typedef struct {
@@ -96,7 +98,7 @@ typedef struct {
     uint32_t magicEnd;
 } UF2_Block;
 
-typedef enum { none, connected, notconnected, usbconnected, usbnotconnected } connectionstatus_t;
+typedef enum { none, connected, connectednofs, connectedwithfs, notconnected, usbconnected, usbnotconnected } connectionstatus_t;
 
 void drawstatus(connectionstatus_t status, const char * statusstr);
 void logstrmulti(const char * str, bool multiline);
@@ -112,6 +114,8 @@ void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState
 void uf2_reset_namestate(void);
 int  uf2_write_block(uint32_t block_no, uint8_t *data, WriteState *state);
 int  uf2_write_header(void);
+
+void probe_flash_uf2(void);
 
 void DumpHex(const void* data, size_t size);
 

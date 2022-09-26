@@ -30,8 +30,6 @@
 #include <string.h>
 #include "boards.h"
 
-#define PICOFAMILYID 0xe48bff56
-
 #define BOARD_UF2_FAMILY_ID PICOFAMILYID
 
 //--------------------------------------------------------------------+

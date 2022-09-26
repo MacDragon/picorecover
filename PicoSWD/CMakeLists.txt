@@ -15,7 +15,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
  
 # Link the Project to a source file (step 4.6)
-add_executable(PicoSWD source.cpp led.c)
+add_executable(PicoSWD source.cpp swd.cpp recover.cpp led.c)
  
 add_subdirectory(littlefs-lib)
 add_subdirectory(msc)
