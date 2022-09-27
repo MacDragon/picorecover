@@ -130,7 +130,7 @@ void buttonguide(void)
     graphics.set_pen(120, 120, 0);
     graphics.text("Reflash", Point(0, 105), 120, 0.66);
     graphics.set_pen(120, 0, 120);
-    graphics.text("Blink", Point(240-graphics.measure_text("Blink", 0.66), 25), 120, 0.66);
+    graphics.text("Erase FS", Point(240-graphics.measure_text("Erase FS", 0.66), 25), 120, 0.66);
     graphics.set_pen(120, 60, 60);
     graphics.text("USB Load", Point(240-graphics.measure_text("USB Load", 0.66), 105), 120, 0.66);
 
@@ -401,6 +401,12 @@ int main() {
                     snprintf(str, 32, "unknown res %d", res);
                     logstr(str);
                 }
+            } else
+            {
+                if ( !picoconnection)
+                    logstr("not connected");
+                else
+                    logstr("no FS to recover");
             }
         }
 
@@ -424,10 +430,20 @@ int main() {
 
         if(button_x.read())
         {
-            shownchoices = true;
-            strcpy(str, "blink");
-            charcount = strlen(str);
-            endline = true;
+            printf("clearing file area\n");
+            logstr("clearing file area");
+            probe_send_instruction(3);
+            sleep_ms(20);
+            printf("recovery wait\n");
+            int32_t res = probe_wait_reply(20000);
+            switch ( res )
+            {
+                case 1 : logstr("file area erased"); break;
+                default :
+                        logstr("erase failed?"); break;
+                break;
+            }
+            openconnection(); // file system should be nulled now, reopen connection.
         }
 
         if(button_y.read())
