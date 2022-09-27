@@ -99,7 +99,7 @@ typedef struct {
     uint32_t magicEnd;
 } UF2_Block;
 
-typedef enum { none, connected, connectednofs, connectedwithfs, notconnected, usbconnected, usbnotconnected } connectionstatus_t;
+typedef enum { none, booting, connected, connectednofs, connectedwithfs, notconnected, usbconnected, usbnotconnected } connectionstatus_t;
 
 void drawstatus(connectionstatus_t status, const char * statusstr);
 void logstrmulti(const char * str, bool multiline);

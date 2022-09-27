@@ -305,6 +305,7 @@ int main() {
     } else
     {
         logstr("No file");
+        gotfile = false;
     }
 
     //openconnection();
@@ -461,7 +462,7 @@ int main() {
                         case 1: logstr("flash complete");
                         logstr("booting board");
                         gpio_put(LED3V3EN_PIN, 0);
-                        drawstatus(notconnected, "");
+                        drawstatus(booting, "");
                         gpio_put(LED3V3EN_PIN, 1);
                         sleep_ms(2000);
                         openconnection();
@@ -507,6 +508,15 @@ int main() {
             drawstatus(usbnotconnected, "");
             usbload();
             logstr("usb exit.");
+            if ( uf2_get_uf2filename(filename, sizeof filename) )
+            {
+                logstrmulti(filename, true);
+                gotfile = true;
+            } else
+            {
+                logstr("No file");
+                gotfile = false;
+            }
         }
 #ifdef RTTCONSOLE
 #define TOKENLENGTH   12
