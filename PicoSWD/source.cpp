@@ -254,6 +254,18 @@ int main() {
     gpio_set_dir(LED3V3EN_PIN, GPIO_OUT);
     gpio_put(LED3V3EN_PIN, 0);
 
+    const uint INTERLOCKOUT = 27;
+    gpio_init(INTERLOCKOUT);
+    gpio_set_dir(INTERLOCKOUT, GPIO_OUT);
+    gpio_put(INTERLOCKOUT, 1);
+
+    const uint INTERLOCKIN = 26;
+    gpio_init(INTERLOCKIN);
+    gpio_set_dir(INTERLOCKIN, GPIO_IN);
+    gpio_pull_down(INTERLOCKIN);
+    bool interlockclosed = gpio_get(INTERLOCKIN);
+    bool powered = false;
+
     st7789.set_backlight(255);
 
     uint8_t r = 0;
@@ -267,7 +279,7 @@ int main() {
 
     logstr("startup.");
 
-    drawstatus(none, "startup");
+    drawstatus(notconnected, "startup");
     
     const uint LED_PIN = PICO_DEFAULT_LED_PIN;
     gpio_init(LED_PIN);
@@ -280,7 +292,7 @@ int main() {
 
     gpio_put(LED_PIN, 1);
 
-    gpio_put(LED3V3EN_PIN, 1);
+    //gpio_put(LED3V3EN_PIN, 1);
 
     char filename[139];
 
@@ -295,10 +307,10 @@ int main() {
         logstr("No file");
     }
 
-    openconnection();
-
+    //openconnection();
+#ifdef RTTCONSOLE
     printf("Enter Command (connect to start) :\n");
-
+#endif
     uint32_t starttime = time_us_32();
     bool shownchoices = false;
 
@@ -309,9 +321,35 @@ int main() {
 
     while ( true )
     {
+#ifdef RTTCONSOLE
         int read;
         bool endline = false;
         read = SEGGER_RTT_GetKey();
+#endif
+        interlockclosed = gpio_get(INTERLOCKIN);
+
+        if ( interlockclosed )
+        {
+            if ( !powered )
+            {
+                gpio_put(LED3V3EN_PIN, 1);
+                lastseen = time_us_32();
+                powered = true;
+                drawstatus(notconnected, "");
+            }
+        }
+        else
+        {
+            if ( powered )
+            {
+                gpio_put(LED3V3EN_PIN, 0);
+                logstr("interlock opened");
+                filesystem = false;
+                picoconnection = false;
+                powered = false;
+                drawstatus(notconnected, "");
+            }
+        }
 
         uint32_t curtick = time_us_32();
 
@@ -322,7 +360,7 @@ int main() {
             //logstr("Press button");
         }
 
-        if ( curtick > lastseen + 1000*1000 ) // every second of not doing something check if pico still there.
+        if ( interlockclosed && curtick > lastseen + 1000*1000 ) // every second of not doing something check if pico still there.
         {
             int32_t result = 0;
             if ( picoconnection && probe_read_memory( 0x20038000+offsetof(shareddata_t, data), (uint8_t*)&result, sizeof result) )
@@ -333,7 +371,9 @@ int main() {
             {
                 openconnection();
             }
-        } else if ( read == 0 )
+        } 
+#ifdef RTTCONSOLE
+        else if ( read == 0 )
 		{
 			continue; // nothing to do this loop, return to start.
 		} else if ( read == 8 || read == 127)
@@ -358,107 +398,117 @@ int main() {
 			endline = true;
 			printf("\r\n");
 		}
+#endif
 
         // check button presses for possible commands.
 
-        if(button_a.read())
+        if ( picoconnection )
         {
-            shownchoices = true;
-            if ( picoconnection && filesystem )
+            if(button_a.read())
             {
-                printf("boot.py recovery\n");
-                logstr("boot.py recovery");
-                probe_send_instruction(1);
-                int32_t res;
-                char str[32];
-                sleep_ms(20);
-                printf("recovery wait\n");
-                res = probe_wait_reply(5000);
-                switch ( res )
+                shownchoices = true;
+                if ( filesystem )
                 {
-                    case 1 : logstr("boot.py renamed"); break;
-                    case 2 : logstr("boot.py deleted"); break;
-                    case -1 : logstr("boot.py error recovering"); break;
-                    case -2 : logstr("boot.py not found"); break;
-                    default :
-                    snprintf(str, 32, "unknown res %d", res);
-                    logstr(str);
-                }
+                    printf("boot.py recovery\n");
+                    logstr("boot.py recovery");
+                    probe_send_instruction(1);
+                    int32_t res;
+                    char str[32];
+                    sleep_ms(20);
+                    printf("recovery wait\n");
+                    res = probe_wait_reply(5000);
+                    switch ( res )
+                    {
+                        case 1 : logstr("boot.py renamed"); break;
+                        case 2 : logstr("boot.py deleted"); break;
+                        case -1 : logstr("boot.py error recovering"); break;
+                        case -2 : logstr("boot.py not found"); break;
+                        default :
+                        snprintf(str, 32, "unknown res %d", res);
+                        logstr(str);
+                    }
 
-                printf("main.py recovery\n");
-                logstr("main.py recovery");
-                probe_send_instruction(2);
-                sleep_ms(20);
-                printf("recovery wait\n");
-                res = probe_wait_reply(5000);
-                switch ( res )
+                    printf("main.py recovery\n");
+                    logstr("main.py recovery");
+                    probe_send_instruction(2);
+                    sleep_ms(20);
+                    printf("recovery wait\n");
+                    res = probe_wait_reply(5000);
+                    switch ( res )
+                    {
+                        case 1 : logstr("main.py renamed"); break;
+                        case 2 : logstr("main.py deleted"); break;
+                        case -1 : logstr("main.py error recovering"); break;
+                        case -2 : logstr("main.py not found"); break;
+                        default :
+                        snprintf(str, 32, "unknown res %d", res);
+                        logstr(str);
+                    }
+                } else
                 {
-                    case 1 : logstr("main.py renamed"); break;
-                    case 2 : logstr("main.py deleted"); break;
-                    case -1 : logstr("main.py error recovering"); break;
-                    case -2 : logstr("main.py not found"); break;
-                    default :
-                    snprintf(str, 32, "unknown res %d", res);
-                    logstr(str);
-                }
-            } else
-            {
-                if ( !picoconnection)
-                    logstr("not connected");
-                else
                     logstr("no FS to recover");
-            }
-        }
-
-        if(button_b.read())
-        {
-            shownchoices = true;
-            if ( gotfile )
-            {
-                logstr("Writing uf2 to pico.");
-                switch ( probe_flash_uf2() )
-                {
-                    case 1: logstr("flash complete"); break;
-                    default:
-                        logstr("flash failed");
                 }
-            } else
-            {
-                logstr("no uf2 to flash");
             }
-        }
 
-        if(button_x.read())
-        {
-            printf("clearing file area\n");
-            logstr("clearing file area");
-            probe_send_instruction(3);
-            sleep_ms(20);
-            printf("recovery wait\n");
-            int32_t res = probe_wait_reply(20000);
-            switch ( res )
+            if(button_b.read())
             {
-                case 1 : logstr("file area erased"); break;
-                default :
-                        logstr("erase failed?"); break;
-                break;
+                shownchoices = true;
+                if ( gotfile )
+                {
+                    logstr("Writing uf2 to pico.");
+                    switch ( probe_flash_uf2() )
+                    {
+                        case 1: logstr("flash complete");
+                        logstr("booting board");
+                        gpio_put(LED3V3EN_PIN, 0);
+                        drawstatus(notconnected, "");
+                        gpio_put(LED3V3EN_PIN, 1);
+                        sleep_ms(2000);
+                        openconnection();
+                        break;
+                        default:
+                            logstr("flash failed");
+                    }
+                } else
+                {
+                    logstr("no uf2 to flash");
+                }
             }
-            openconnection(); // file system should be nulled now, reopen connection.
+
+            if(button_x.read())
+            {
+                printf("clearing file area\n");
+                logstr("clearing file area");
+                probe_send_instruction(3);
+                sleep_ms(20);
+                printf("recovery wait\n");
+                int32_t res = probe_wait_reply(20000);
+                switch ( res )
+                {
+                    case 1 : logstr("file area erased"); break;
+                    default :
+                            logstr("erase failed?"); break;
+                    break;
+                }
+                openconnection(); // file system should be nulled now, reopen connection.
+            }
+        } else
+        {
+            if ( button_a.read() || button_b.read() || button_x.read() )
+                logstr("not connected");
         }
 
         if(button_y.read())
         {
             logstr("usbload.");
+            powered = false;
             gpio_put(LED3V3EN_PIN, 0);
             picoconnection = false;
             drawstatus(usbnotconnected, "");
             usbload();
             logstr("usb exit.");
-            gpio_put(LED3V3EN_PIN, 1);
-            openconnection();
-            drawstatus(picoconnection?connected:notconnected, "");
         }
-
+#ifdef RTTCONSOLE
 #define TOKENLENGTH   12
 
 		if ( charcount == 60 || endline )
@@ -708,6 +758,7 @@ int main() {
 			str[0] = 0;
             printf("Enter Command (%s) :\n", connected?"connected":"disconnected");
         }
+        #endif
     }
 #endif
 }
