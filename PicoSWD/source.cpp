@@ -17,10 +17,7 @@ extern "C" {
 #include "button.hpp"
 #include "swd.hpp"
 
-
-extern "C" {
-    int usbload(void);
-}
+int usbload(void);
 
 using namespace pimoroni;
 using namespace std;
@@ -182,6 +179,10 @@ void drawstatus(connectionstatus_t status, const char * statusstr)
             case usbnotconnected:
             graphics.set_pen(120, 0, 0);
             str = "no usb";
+            break;
+            case booting:
+            graphics.set_pen(120, 120, 0);
+            str = "booting";
             break;
             default:
             graphics.set_pen(120, 120, 120);

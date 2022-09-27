@@ -118,6 +118,8 @@ int  uf2_write_header(void);
 
 int32_t probe_flash_uf2(void);
 
+void msc_reset_write( void );
+
 void DumpHex(const void* data, size_t size);
 
 #endif

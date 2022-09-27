@@ -27,15 +27,18 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
-
+#include "button.hpp"
+extern "C" {
 #include "board_api.h"
 #include "uf2.h"
 #include "tusb.h"
-
 void uf2_init(void);
+}
 
 static volatile uint32_t _timer_count = 0;
-volatile closeusb = false;
+volatile bool closeusb = false;
+
+extern pimoroni::Button button_y;
 
 int usbload(void)
 {
@@ -65,7 +68,7 @@ int usbload(void)
       connected = true;
     }
 
-    if ( (connected && !tud_connected() )|| closeusb)
+    if ( (connected && !tud_connected() )|| closeusb || button_y.read() )
     {
       run = false;
     }
@@ -74,7 +77,8 @@ int usbload(void)
 
 #endif
 
-printf("usb exit\n");
+  printf("usb exit\n");
+  return 1;
 }
 
 //--------------------------------------------------------------------+
