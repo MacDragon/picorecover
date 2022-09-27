@@ -76,6 +76,7 @@ typedef struct {
     bool aborted;             // aborting update and reset
 
     bool gotname;
+    uint8_t percent;
 
     uint8_t writtenMask[MAX_BLOCKS / 8 + 1];
 } WriteState;
@@ -115,7 +116,7 @@ void uf2_reset_namestate(void);
 int  uf2_write_block(uint32_t block_no, uint8_t *data, WriteState *state);
 int  uf2_write_header(void);
 
-void probe_flash_uf2(void);
+int32_t probe_flash_uf2(void);
 
 void DumpHex(const void* data, size_t size);
 

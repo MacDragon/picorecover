@@ -19,7 +19,7 @@ extern "C" {
 #include "source.h"
 
 
-void probe_flash_uf2( void )
+int32_t probe_flash_uf2( void )
 {
     UF2_Block uf2data;
 
@@ -32,7 +32,7 @@ void probe_flash_uf2( void )
     bool baddata = false;
     if (uf2blocks == 0)
     {
-        baddata = true;
+        return -1;
     } else for ( int i=0;i<uf2blocks;i++)
     {
         uf2_get_uf2block(i, (uint8_t*)&uf2data);
@@ -56,8 +56,7 @@ void probe_flash_uf2( void )
         || ( uf2data.flags & 0x2000 == 0x2000 && uf2data.familyID != PICOFAMILYID )
             )
 #endif
-            baddata = true;
-            break;
+            return -2;
         }
         uint32_t curaddr = uf2data.targetAddr;
         if ( curaddr > highaddr )
@@ -74,13 +73,11 @@ void probe_flash_uf2( void )
     if ( highaddr % 4096 != 0)
         highaddr = highaddr + ( 4096 - highaddr % 4096 ); // pad upto next 4k boundary.
     
-    if ( baddata )
-    {
-        printf("Bad data found, ignoring\n"); 
-    } else
     {
         // data verified, start sending!
         printf("UF2 data ok %d blocks, erasing from %08x to %08x\n", uf2blocks, lowaddr, highaddr);
+
+        drawstatus(connected, "Erasing");
 
         uint32_t erasesize = highaddr-lowaddr;
         
@@ -93,12 +90,14 @@ void probe_flash_uf2( void )
         if ( res != 1 )
         {
             printf("data erase failed %d\n", res);
+            drawstatus(connected, "erase fail");
+            return -3;
         } else
         {
             printf("erase took %dms\n", (time_us_32()-start)/1000);
             int32_t lastperc = -1;
             bool error = false;
-            
+
             for ( int i=0;i<uf2blocks;i++)
             {
                 uf2_get_uf2block(i, (uint8_t*)&uf2data);
@@ -107,6 +106,10 @@ void probe_flash_uf2( void )
                 if ( perc != lastperc )
                 {
                     lastperc = perc;
+                    char str[32];
+                    snprintf(str, sizeof str, "flash %d%%", perc);
+                    // display % status here.
+                    drawstatus(connected, str);
                     printf("Progress %d%%\n", perc);
                 }
 
@@ -135,7 +138,7 @@ void probe_flash_uf2( void )
                 {
                     printf("data send error %d, %04x %04x on block %d\n", res, crcread, crccalc, i);
                     error = true;
-                    break;
+                    return -4;
                 }
                 printf("unknown state\n");
                 break;
@@ -143,9 +146,12 @@ void probe_flash_uf2( void )
 
             if ( lastperc != 100 && !error )
             {
+                drawstatus(connected, "flash 100%");
                 printf("Progress 100%%\n");
                 printf("data sent ok took %d\n", 0);
+                return 1;
             }
         }
     }
+    return -5; // shouldn't be here, unknown failure.
 }

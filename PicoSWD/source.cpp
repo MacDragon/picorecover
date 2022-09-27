@@ -29,7 +29,9 @@ using namespace std;
 ST7789 st7789(PicoDisplay::WIDTH, PicoDisplay::HEIGHT, ROTATE_0, false, get_spi_pins(BG_SPI_FRONT));
 
 // Graphics library - in RGB332 mode you get 256 colours and optional dithering for ~32K RAM.
-PicoGraphics_PenRGB332 graphics(st7789.width, st7789.height, nullptr);
+//PicoGraphics_PenRGB332 graphics(st7789.width, st7789.height, nullptr);
+
+PicoGraphics_PenRGB565 graphics(st7789.width, st7789.height, nullptr);
 
 // RGB LED
 RGBLED led(PicoDisplay::LED_R, PicoDisplay::LED_G, PicoDisplay::LED_B);
@@ -167,7 +169,7 @@ void drawstatus(connectionstatus_t status, const char * statusstr)
                 break;
             case connectedwithfs:
                 graphics.set_pen(0, 120, 0);
-                str = "connected+fs";
+                str = "con+gotfs";
                 break;
             case notconnected:
                 graphics.set_pen(120, 0, 0);
@@ -187,6 +189,8 @@ void drawstatus(connectionstatus_t status, const char * statusstr)
         }
 
         graphics.text(str, Point(0, 13*9+1), 120, 2);
+        if ( strlen(statusstr) )
+            graphics.text(statusstr, Point(120, 13*9+1), 120, 2);
 
         st7789.update(&graphics);
     }  
@@ -280,9 +284,12 @@ int main() {
 
     char filename[139];
 
+    bool gotfile = false;
+
     if ( uf2_get_uf2filename(filename, sizeof filename) )
     {
         logstrmulti(filename, true);
+        gotfile = true;
     } else
     {
         logstr("No file");
@@ -315,7 +322,7 @@ int main() {
             //logstr("Press button");
         }
 
-        if ( curtick > lastseen + 1000*1000 )
+        if ( curtick > lastseen + 1000*1000 ) // every second of not doing something check if pico still there.
         {
             int32_t result = 0;
             if ( picoconnection && probe_read_memory( 0x20038000+offsetof(shareddata_t, data), (uint8_t*)&result, sizeof result) )
@@ -325,7 +332,6 @@ int main() {
             } else
             {
                 openconnection();
-                //connected = false;
             }
         } else if ( read == 0 )
 		{
@@ -357,20 +363,68 @@ int main() {
 
         if(button_a.read())
         {
-            strcpy(str, "recover");
-            charcount = strlen(str);
-            endline = true;
+            shownchoices = true;
+            if ( picoconnection && filesystem )
+            {
+                printf("boot.py recovery\n");
+                logstr("boot.py recovery");
+                probe_send_instruction(1);
+                int32_t res;
+                char str[32];
+                sleep_ms(20);
+                printf("recovery wait\n");
+                res = probe_wait_reply(5000);
+                switch ( res )
+                {
+                    case 1 : logstr("boot.py renamed"); break;
+                    case 2 : logstr("boot.py deleted"); break;
+                    case -1 : logstr("boot.py error recovering"); break;
+                    case -2 : logstr("boot.py not found"); break;
+                    default :
+                    snprintf(str, 32, "unknown res %d", res);
+                    logstr(str);
+                }
+
+                printf("main.py recovery\n");
+                logstr("main.py recovery");
+                probe_send_instruction(2);
+                sleep_ms(20);
+                printf("recovery wait\n");
+                res = probe_wait_reply(5000);
+                switch ( res )
+                {
+                    case 1 : logstr("main.py renamed"); break;
+                    case 2 : logstr("main.py deleted"); break;
+                    case -1 : logstr("main.py error recovering"); break;
+                    case -2 : logstr("main.py not found"); break;
+                    default :
+                    snprintf(str, 32, "unknown res %d", res);
+                    logstr(str);
+                }
+            }
         }
 
         if(button_b.read())
         {
-            strcpy(str, "reflash");
-            charcount = strlen(str);
-            endline = true;
+            shownchoices = true;
+            if ( gotfile )
+            {
+                logstr("Writing uf2 to pico.");
+                switch ( probe_flash_uf2() )
+                {
+                    case 1: logstr("flash complete"); break;
+                    default:
+                        logstr("flash failed");
+                }
+            } else
+            {
+                logstr("no uf2 to flash");
+            }
         }
 
         if(button_x.read())
         {
+            shownchoices = true;
             strcpy(str, "blink");
             charcount = strlen(str);
             endline = true;
@@ -378,9 +432,15 @@ int main() {
 
         if(button_y.read())
         {
-            strcpy(str, "usbload");
-            charcount = strlen(str);
-            endline = true;
+            logstr("usbload.");
+            gpio_put(LED3V3EN_PIN, 0);
+            picoconnection = false;
+            drawstatus(usbnotconnected, "");
+            usbload();
+            logstr("usb exit.");
+            gpio_put(LED3V3EN_PIN, 1);
+            openconnection();
+            drawstatus(picoconnection?connected:notconnected, "");
         }
 
 #define TOKENLENGTH   12
@@ -499,7 +559,18 @@ int main() {
             {
                 processed = true;
                 {
-                    probe_flash_uf2();
+                    logstr("Writing uf2 to pico.");
+                    switch ( probe_flash_uf2() )
+                    {
+                        case 1:
+                            logstr("flash complete");
+                            sleep_ms(250);
+                            drawstatus(connected, "");
+                            break;
+
+                        default:
+                            logstr("flash failed");
+                    }
                 }
             }
 #endif
@@ -540,7 +611,7 @@ int main() {
                     {
                         printf("main.py recovery\n");
                         probe_send_instruction(2);
-                        //sleep_ms(20);
+                        sleep_ms(20);
                         int32_t res = probe_wait_reply(5000);
                         printf("result %d\n", res);
                     } else
@@ -553,7 +624,7 @@ int main() {
                     {
                         printf("clearing file area\n");
                         probe_send_instruction(3);
-                        //sleep_ms(20);
+                        sleep_ms(20);
                         int32_t res = probe_wait_reply(20000);
                         printf("result %d\n", res);
                     } else

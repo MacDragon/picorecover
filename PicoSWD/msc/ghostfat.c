@@ -958,6 +958,22 @@ int uf2_write_block (uint32_t lbaaddr, uint8_t *data, WriteState *state)
       {
         state->writtenMask[pos] |= mask;
         state->numWritten++;
+
+        uint8_t curperc = ((100000/state->numBlocks)*state->numWritten)/1000;
+
+        if ( curperc > state->percent + 1 || state->numWritten == 1 )
+        {
+          state->percent = curperc;
+
+          char str[32];
+          snprintf(str, sizeof str, "usb load %d%%", curperc);
+          // display % status here.
+          drawstatus(usbconnected, str);
+        } else if ( state->numBlocks == state->numWritten)
+        {
+           drawstatus(usbconnected, "usb load 100%%");
+        }
+
       }
 
       // flush last blocks
