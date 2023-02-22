@@ -6,6 +6,7 @@ extern "C" {
 #include "source.h"
 #include "SEGGER_RTT.h"
 #include "hardware/structs/systick.h"
+#include "hardware/adc.h"
 #include "pico_hal.h"
 #include "uf2.h"
 #include "../wipe/wipe.h"
@@ -17,7 +18,7 @@ extern "C" {
 #include "button.hpp"
 #include "swd.hpp"
 
-int usbload(void);
+int usbload(uint8_t file);
 
 using namespace pimoroni;
 using namespace std;
@@ -135,7 +136,31 @@ void buttonguide(void)
     st7789.update(&graphics);
 }
 
-bool picoconnection = false;
+void storagechoiceguide(void)
+{
+    //graphics.set_font(&font8);
+    graphics.set_font(&hershey::timesrb);
+
+    graphics.remove_clip();
+    graphics.set_pen(0, 0, 0);
+    Rect clear_rect(0, 0, 240, 13*9);
+    graphics.rectangle(clear_rect);
+
+    graphics.set_pen(0, 120, 120);
+    graphics.text("Pico", Point(0, 25), 120, 0.66);
+    graphics.set_pen(120, 120, 0);
+    graphics.text("Pico W", Point(0, 105), 120, 0.66);
+    graphics.set_pen(120, 0, 120);
+    graphics.text("cancel", Point(240-graphics.measure_text("cancel", 0.66), 25), 120, 0.66);
+
+    graphics.set_pen(120, 60, 60);
+    graphics.text("Rcv Image for?", Point(30, 65), 200, 0.8);
+
+    // now we've done our drawing let's update the screen
+    st7789.update(&graphics);
+}
+
+uint8_t picoconnection = false;
 bool filesystem = false;
 uint32_t lastseen = 0;
 
@@ -162,11 +187,17 @@ void drawstatus(connectionstatus_t status, const char * statusstr)
             case connected:
             case connectednofs:
                 graphics.set_pen(0, 120, 0);
-                str = "connected";
+                if ( picoconnection == 2)
+                    str = "con W";
+                else
+                    str = "connected";
                 break;
             case connectedwithfs:
                 graphics.set_pen(0, 120, 0);
-                str = "con+gotfs";
+                if ( picoconnection == 2)
+                    str = "con W+gotfs";
+                else
+                    str = "con+gotfs";
                 break;
             case notconnected:
                 graphics.set_pen(120, 0, 0);
@@ -205,7 +236,7 @@ void openconnection(void)
     if ( !probe_rescue_reset() )
     {
         drawstatus(notconnected, "");
-        picoconnection = false;
+        picoconnection = 0;
         return;
     }
 
@@ -214,25 +245,44 @@ void openconnection(void)
         int32_t result = 0;
         probe_read_memory( 0x20038000+offsetof(shareddata_t, res), (uint8_t*)&result, sizeof result);
         printf("Helper uploaded, checking state: %08x -> ", result);
-        if ( result == 0xabcd )
+        
+        switch ( ( abs(result) & 0xf00 ) >> 8 )
+        {
+            case 1:
+                printf("Found pico\n");
+                picoconnection = 1;
+                break;
+            case 2:
+                printf("Found pico W\n");
+                picoconnection = 2;
+                break;
+            default:
+                picoconnection = 0;
+                filesystem = false;
+                printf("Pico version unidentified\n");
+                return;
+        }
+
+        result = result & 0xff;
+        
+        if ( result == 0xab )
         {
             printf("Filesystem found\n");
             filesystem = true;
             drawstatus(connectedwithfs, "");
-        }
-        else
+        } else
         {
             printf("No filesystem\n");
             filesystem = false;
+
             drawstatus(connectednofs, "");
         }
 
-        picoconnection = true;
         lastseen = time_us_32();
     } else
     {
         drawstatus(notconnected, "");
-        picoconnection = false;
+        picoconnection = 0;
     }
 #if 0
     gpio_put(LED_PIN, 0);
@@ -250,10 +300,10 @@ int main() {
 
     SEGGER_RTT_Init();
 
-    const uint LED3V3EN_PIN = 28;
-    gpio_init(LED3V3EN_PIN);
-    gpio_set_dir(LED3V3EN_PIN, GPIO_OUT);
-    gpio_put(LED3V3EN_PIN, 0);
+    const uint SET3V3EN_PIN = 28;
+    gpio_init(SET3V3EN_PIN);
+    gpio_set_dir(SET3V3EN_PIN, GPIO_OUT);
+    gpio_put(SET3V3EN_PIN, 0);
 
     const uint INTERLOCKOUT = 27;
     gpio_init(INTERLOCKOUT);
@@ -266,6 +316,38 @@ int main() {
     gpio_pull_down(INTERLOCKIN);
     bool interlockclosed = gpio_get(INTERLOCKIN);
     bool powered = false;
+
+
+    adc_init();
+
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    gpio_put(PICO_DEFAULT_LED_PIN, 0);
+
+    // detect pico version here.
+
+    int picoversion = 1;
+
+// https://forums.raspberrypi.com/viewtopic.php?t=336775
+    #define VSYS_ADC_GPIO  29
+    #define VSYS_ADC_CHAN   3
+    #define HALF_VOLT     204 // 0.5V divide by 3, as 12-bit with 3V3 Vref
+   
+    adc_gpio_init(VSYS_ADC_GPIO); // vsys input
+    adc_select_input(VSYS_ADC_CHAN); // VSYS channel
+
+    uint16_t adcval = adc_read();
+
+    // with LED pin off this should read near 0
+    if (adcval< HALF_VOLT)
+        picoversion = 2;                                 // Pico-W
+
+
+    printf("got adc reading %u, pico version %d\n", adcval, picoversion);
+
+
+    // turn on led
+    gpio_put(PICO_DEFAULT_LED_PIN, 1);
 
     st7789.set_backlight(255);
 
@@ -297,16 +379,24 @@ int main() {
 
     char filename[139];
 
-    bool gotfile = false;
+    bool gotfile[2] = { false };
 
-    if ( uf2_get_uf2filename(filename, sizeof filename) )
+    if ( uf2_get_uf2filename(0, filename, sizeof filename) )
     {
         logstrmulti(filename, true);
-        gotfile = true;
+        gotfile[0] = true;
     } else
     {
-        logstr("No file");
-        gotfile = false;
+        logstr("No file for pico");
+    }
+
+    if ( uf2_get_uf2filename(1, filename, sizeof filename) )
+    {
+        logstrmulti(filename, true);
+        gotfile[1] = true;
+    } else
+    {
+        logstr("No file for pico W");
     }
 
     //openconnection();
@@ -334,7 +424,7 @@ int main() {
         {
             if ( !powered )
             {
-                gpio_put(LED3V3EN_PIN, 1);
+                gpio_put(SET3V3EN_PIN, 1);
                 lastseen = time_us_32();
                 powered = true;
                 drawstatus(notconnected, "");
@@ -344,10 +434,10 @@ int main() {
         {
             if ( powered )
             {
-                gpio_put(LED3V3EN_PIN, 0);
+                gpio_put(SET3V3EN_PIN, 0);
                 logstr("interlock opened");
                 filesystem = false;
-                picoconnection = false;
+                picoconnection = 0;
                 powered = false;
                 drawstatus(notconnected, "");
             }
@@ -455,16 +545,19 @@ int main() {
             if(button_b.read())
             {
                 shownchoices = true;
-                if ( gotfile )
+                if ( gotfile[picoconnection-1] )
                 {
-                    logstr("Writing uf2 to pico.");
+                    char str[32];
+                    snprintf(str, sizeof str, "Writing uf2 to pico%s", picoconnection==2?" W":"");
+                    logstr(str);
+                    uf2_init(picoconnection-1); // setup file ready to flash.
                     switch ( probe_flash_uf2() )
                     {
                         case 1: logstr("flash complete");
                         logstr("booting board");
-                        gpio_put(LED3V3EN_PIN, 0);
+                        gpio_put(SET3V3EN_PIN, 0);
                         drawstatus(booting, "");
-                        gpio_put(LED3V3EN_PIN, 1);
+                        gpio_put(SET3V3EN_PIN, 1);
                         sleep_ms(2000);
                         openconnection();
                         break;
@@ -502,21 +595,61 @@ int main() {
 
         if(button_y.read())
         {
-            logstr("usbload.");
-            powered = false;
-            gpio_put(LED3V3EN_PIN, 0);
-            picoconnection = false;
-            drawstatus(usbnotconnected, "");
-            usbload();
-            logstr("usb exit.");
-            if ( uf2_get_uf2filename(filename, sizeof filename) )
+            storagechoiceguide();
+            uint8_t choice = 2;
+
+            uint32_t qstart = time_us_32();
+            while ( time_us_32() < qstart + 1000*1000*5) // give 5 seconds to make choice, or backs out.
             {
-                logstrmulti(filename, true);
-                gotfile = true;
-            } else
+                if ( button_x.read() )
+                {
+                    choice = 2;
+                    break;
+                }
+
+                button_y.read();
+
+                if ( button_a.read() )
+                {
+                    choice = 0;
+                    break;
+                }
+
+                if ( button_b.read() )
+                {
+                    choice = 1;
+                    break;
+                }
+            }
+
+            switch ( choice )
             {
-                logstr("No file");
-                gotfile = false;
+                case 0:
+                case 1:
+                    {
+                    char str[32];
+                    snprintf(str, sizeof str, "usbload pico%s", choice==1?" W":"");
+                    logstr(str);
+                    powered = false;
+                    gpio_put(SET3V3EN_PIN, 0);
+                    picoconnection = false;
+                    drawstatus(usbnotconnected, "");
+                    usbload(choice);
+                    logstr("usb exit.");
+                    if ( uf2_get_uf2filename(choice, filename, sizeof filename) )
+                    {
+                        logstrmulti(filename, true);
+                        gotfile[choice] = true;
+                    } else
+                    {
+                        logstr("No file");
+                        gotfile[choice] = false;
+                    }
+                    }
+                break;
+
+                default:
+                    logstr("usbload choice timeout");
             }
         }
 #ifdef RTTCONSOLE
@@ -658,7 +791,7 @@ int main() {
                 gpio_put(LED3V3EN_PIN, 0);
                 picoconnection = false;
                 drawstatus(usbnotconnected, "");
-                usbload();
+                usbload(0);
                 processed = true;
                 logstr("usb exit.");
                 gpio_put(LED3V3EN_PIN, 1);

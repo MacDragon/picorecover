@@ -190,12 +190,11 @@ typedef union {
   struct {
     char shortname[11];
     char longname[234];
-    uint32_t blocks;
-    uint32_t crc32;
+    uint16_t blocks;
     uint32_t familyid;
-    uint32_t headercrc;
+    uint32_t crc32;
   };
-} headerdata_t;
+} headerdata_t; // just fits within one flash page.
 
 headerdata_t headerdata;
 
@@ -306,13 +305,16 @@ static uint32_t info_index_of(uint32_t cluster)
   return FID_UF2;
 }
 
-void uf2_init(void)
+void uf2_init(uint8_t file)
 {
+  board_flash_init(file);
+  msc_reset_write();
+  
   // TODO maybe limit to application size only if possible board_flash_app_size()
   _flash_size = board_flash_size();
 
   // read in possible header data.
-  board_flash_read(4096*6, &headerdata, 4096, true);
+  board_flash_read(0, &headerdata, 4096, header);
 
   if ( headerdata.shortname[0] != 0 && headerdata.shortname[0] != 0xff)
   {
@@ -566,28 +568,30 @@ void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState
 
 bool showndump = false;
 
-bool uf2_get_uf2filename(char *str, uint32_t strlen)
+bool uf2_get_uf2filename( uint8_t fileno, char *str, uint32_t strlen)
 {
-  headerdata_t header;
-  board_flash_read(4096*6, &header, sizeof header, true);
+  headerdata_t headerdata;
+  
+  board_flash_init(fileno);
+  board_flash_read(0, &headerdata, sizeof headerdata, header);
 
   memset(str, 0, strlen);
 
-  if ( header.blocks == 0 )
+  if ( headerdata.blocks == 0 )
     return false; // no blocks, so we have no file and thus no name.
 
-  if ( header.familyid != PICOFAMILYID)
+  if ( headerdata.familyid != PICOFAMILYID)
     return false;
 
   int namelen = 0;
   //printf("Adding Longname : ");
-  for (int position = 0; position<sizeof header.longname; position+=2 )
+  for (int position = 0; position<sizeof headerdata.longname; position+=2 )
   {
-    if ( header.longname[position] == 0 || header.longname[position] == 0xff )
+    if ( headerdata.longname[position] == 0 || headerdata.longname[position] == 0xff )
       break;
-    if ( header.longname[position+1] == 0 )
+    if ( headerdata.longname[position+1] == 0 )
     {
-      str[namelen] = header.longname[position];
+      str[namelen] = headerdata.longname[position];
       namelen++;
     }
   }
@@ -597,21 +601,21 @@ bool uf2_get_uf2filename(char *str, uint32_t strlen)
     return true;
   }
 
-  for ( ; namelen <8 && header.shortname[namelen] != 0x20; namelen++)
+  for ( ; namelen <8 && headerdata.shortname[namelen] != 0x20; namelen++)
   {
-    str[namelen] = header.shortname[namelen];
+    str[namelen] = headerdata.shortname[namelen];
   }
 
   if ( namelen ) // we got a filename, check if there's an extention.
   {
-    if (header.shortname[8] != 0x20)
+    if (headerdata.shortname[8] != 0x20)
     {
       str[namelen++] = '.';
       for ( int i=0;i<3;i++)
       {
-        if (header.shortname[8+i] == 0x20)
+        if (headerdata.shortname[8+i] == 0x20)
           break;
-        str[namelen++] = header.shortname[8+i];
+        str[namelen++] = headerdata.shortname[8+i];
       }
     }
     return true;
@@ -897,8 +901,8 @@ int uf2_write_header(void)
 {
     printf("Storing header data\n");
     headerdata.familyid = PICOFAMILYID;
-    board_flash_write(0, blockaddresses, sizeof blockaddresses, true);
-    board_flash_write(4096*6, &headerdata, sizeof headerdata, true);
+    board_flash_write(0, blockaddresses, sizeof blockaddresses, addresses);
+    board_flash_write(0, &headerdata, sizeof headerdata, header);
     //wDumpHex(blockaddresses, 384);
 }
 
@@ -909,9 +913,9 @@ int uf2_write_header(void)
  * 512 : write is successful (BPB_SECTOR_SIZE == 512)
  *   0 : is busy with flashing, tinyusb stack will call write_block again with the same parameters later on
  */
-int uf2_write_block (uint32_t lbaaddr, uint8_t *data, WriteState *state)
+int uf2_write_block (uint32_t lbaaddr, uint8_t *buffer, WriteState *state)
 {
-  UF2_Block *bl = (void*) data;
+  UF2_Block *bl = (void*) buffer;
 
   if ( !is_uf2_block(bl) )
   {
@@ -923,7 +927,7 @@ int uf2_write_block (uint32_t lbaaddr, uint8_t *data, WriteState *state)
     // generic family ID
 
     printf("Writing UF2 block %d/%d %dB target addr %08x\n", bl->blockNo+1, bl->numBlocks, bl->payloadSize, bl->targetAddr);
-    board_flash_write(bl->blockNo*256, bl->data, bl->payloadSize, false);
+    board_flash_write(bl->blockNo*256, bl->data, bl->payloadSize, data);
 
     // also store address in header block
     blockaddresses[bl->blockNo] = bl->targetAddr;

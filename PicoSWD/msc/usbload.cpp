@@ -32,7 +32,6 @@ extern "C" {
 #include "board_api.h"
 #include "uf2.h"
 #include "tusb.h"
-void uf2_init(void);
 }
 
 static volatile uint32_t _timer_count = 0;
@@ -40,14 +39,9 @@ volatile bool closeusb = false;
 
 extern pimoroni::Button button_y;
 
-int usbload(void)
+int usbload(uint8_t file)
 {
-  //board_dfu_init();
-  board_flash_init();
-
-  msc_reset_write();
-  
-  uf2_init();
+  uf2_init(file);
   tusb_init();
 
   printf("Start usb drive\n"); 

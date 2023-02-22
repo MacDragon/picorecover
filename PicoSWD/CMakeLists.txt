@@ -24,7 +24,7 @@ target_include_directories(PicoSWD PRIVATE ${../../wipe/})
 target_include_directories(PicoSWD PRIVATE .)
 
 # Link the Project to an extra library (pico_stdlib)
-target_link_libraries(PicoSWD pico_stdlib hardware_pio littlefs-lib tinyusb_device tinyusb_board hardware_spi hardware_pwm hardware_dma rgbled pico_display pico_graphics st7789 button)
+target_link_libraries(PicoSWD pico_stdlib hardware_pio hardware_adc littlefs-lib tinyusb_device tinyusb_board hardware_spi hardware_pwm hardware_dma rgbled pico_display pico_graphics st7789 button)
 
 # Initalise the SDK
 pico_sdk_init()

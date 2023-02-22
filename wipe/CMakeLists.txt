@@ -11,10 +11,10 @@ project(wipe VERSION 1.0.0)
 add_executable(wipe wipe.c)
  
 add_subdirectory(littlefs-lib)
-add_subdirectory(msc)
+# add_subdirectory(msc)
 
 # Link the Project to an extra library (pico_stdlib)
-target_link_libraries(wipe pico_stdlib hardware_flash littlefs-lib)
+target_link_libraries(wipe pico_stdlib hardware_flash hardware_adc littlefs-lib)
  
 # Initalise the SDK
 pico_sdk_init()

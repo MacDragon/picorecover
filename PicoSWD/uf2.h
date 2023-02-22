@@ -101,14 +101,16 @@ typedef struct {
 
 typedef enum { none, booting, connected, connectednofs, connectedwithfs, notconnected, usbconnected, usbnotconnected } connectionstatus_t;
 
+typedef enum { data, addresses, header } datatype_t;
+
 void drawstatus(connectionstatus_t status, const char * statusstr);
 void logstrmulti(const char * str, bool multiline);
 void logstr(const char * str);
 
 
-void uf2_init(void);
+void uf2_init(uint8_t file);
 uint32_t uf2_get_uf2blockcount(void);
-bool uf2_get_uf2filename(char *str, uint32_t strlen);
+bool uf2_get_uf2filename( uint8_t fileno, char *str, uint32_t strlen);
 void uf2_get_uf2block(uint32_t block_no, uint8_t *data);
 void uf2_read_fsblock(uint32_t block_no, uint8_t *data);
 void uf2_get_filename(uint8_t *data, uint32_t datalen, uint8_t block, WriteState *state);

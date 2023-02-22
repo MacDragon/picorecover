@@ -33,6 +33,7 @@
 
 #include "pico/stdlib.h"
 #include "hardware/flash.h"
+#include "hardware/adc.h"
 #include "pico/bootrom.h"
 #include "pico_hal.h"
 #include "wipe.h"
@@ -163,10 +164,36 @@ void flasherror( void )
 }
 
 int main() {
+    adc_init();
+
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    gpio_put(PICO_DEFAULT_LED_PIN, 0);
+
+    // detect pico version here.
 
     flash_start();
+
+    int picoversion = 1;
+
+// https://forums.raspberrypi.com/viewtopic.php?t=336775
+    #define VSYS_ADC_GPIO  29
+    #define VSYS_ADC_CHAN   3
+    #define HALF_VOLT     204 // 0.5V divide by 3, as 12-bit with 3V3 Vref
+   
+    adc_gpio_init(VSYS_ADC_GPIO); // vsys input
+    adc_select_input(VSYS_ADC_CHAN); // VSYS channel
+
+    busy_wait_ms(5);
+
+    int16_t adcval = adc_read();
+
+    // with LED pin off this should read near 0
+    if (adcval < HALF_VOLT)
+        picoversion = 2;                                 // Pico-W
+
+    // turn on led
+    gpio_put(PICO_DEFAULT_LED_PIN, 1);
 
     exchange.magic = 0;
 
@@ -188,15 +215,13 @@ int main() {
 
     if ( res == LFS_ERR_OK)
     {
-        exchange.res = 0xabcd; // flag that filesystem was found.
+        exchange.res = 0xab | adcval << 16 | ( picoversion << 8 ); // flag that filesystem was found.
         filesystemok = true;
     } else
     {
         //flasherror();
-        exchange.res = res;
+        exchange.res = abs(res) | adcval << 16 | ( picoversion << 8 );
     }
-
-    gpio_put(PICO_DEFAULT_LED_PIN, 1);
 
     while ( 1 )
     {

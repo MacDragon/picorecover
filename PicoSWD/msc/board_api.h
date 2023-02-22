@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "boards.h"
+#include "uf2.h"
 
 #define BOARD_UF2_FAMILY_ID PICOFAMILYID
 
@@ -129,16 +130,16 @@ uint8_t board_usb_get_serial(uint8_t serial_id[16]);
 //--------------------------------------------------------------------+
 
 // Initialize flash for DFU
-void board_flash_init(void);
+void board_flash_init(uint8_t fileno);
 
 // Get size of flash
 uint32_t board_flash_size(void);
 
 // Read from flash
-void board_flash_read (uint32_t addr, void* buffer, uint32_t len, bool header);
+void board_flash_read (uint32_t addr, void* buffer, uint32_t len, datatype_t area);
 
 // Write to flash
-void board_flash_write(uint32_t addr, void const *data, uint32_t len, bool header);
+void board_flash_write(uint32_t addr, void const *data, uint32_t len, datatype_t area);
 
 // Flush/Sync flash contents
 void board_flash_flush(void);
