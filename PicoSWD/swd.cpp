@@ -4,12 +4,12 @@
 
 extern "C" {
 #include "source.h"
-#include "SEGGER_RTT.h"
+//#include "SEGGER_RTT.h"
 #include "hardware/structs/systick.h"
-#include "helper.h"
-#include "pico_hal.h"
-#include "uf2.h"
+#include "../wipe/helper.h"
+#include "../wipe/littlefs-lib/pico_hal.h"
 #include "../wipe/wipe.h"
+#include "uf2.h"
 }
 
 #define PROBE_PIN_OFFSET 2
@@ -802,14 +802,14 @@ bool probe_sendhelper( void )
         printf("Setup error 3\n");
     }
 
-    printf("Send helper %dB\n", sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin);
+    printf("Send helper %dB\n", sizeof helper);
     uint32_t start = time_us_32();
-    probe_write_memory(0x20000000, _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin);
-    printf("Send took %dms, Checking helper %dB\n", (time_us_32() - start)/1000, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin);
+    probe_write_memory(0x20000000, helper, sizeof helper);
+    printf("Send took %dms, Checking helper %dB\n", (time_us_32() - start)/1000, sizeof helper);
     start = time_us_32();
 
     printf("Verify data:\n"); 
-    if ( !probe_verify_memory(0x20000000, _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin, sizeof _Users_visa_Code_pico_picorecover_wipe_build_wipe_bin) )
+    if ( !probe_verify_memory(0x20000000, helper, sizeof helper) )
     {
        printf("Verify failed, Bad data send\n"); 
     }

@@ -5,9 +5,10 @@
 extern "C" {
 #include "source.h"
 #include "SEGGER_RTT.h"
+#include "stdio_rtt.h"
 #include "hardware/structs/systick.h"
 #include "hardware/adc.h"
-#include "pico_hal.h"
+#include "../wipe/littlefs-lib/pico_hal.h"
 #include "uf2.h"
 #include "../wipe/wipe.h"
 }
@@ -297,6 +298,7 @@ int main() {
 #else
     set_sys_clock_khz(250000, true); //250mhz seems to work
     stdio_init_all();
+    stdio_rtt_init();
 
     SEGGER_RTT_Init();
 
@@ -370,8 +372,8 @@ int main() {
 
     probe_init();
 
-    volatile uint32_t rtt = (uint32_t) &_SEGGER_RTT;
-    volatile uint32_t rttsize = sizeof _SEGGER_RTT;
+  //  volatile uint32_t rtt = (uint32_t) &_SEGGER_RTT;
+  //  volatile uint32_t rttsize = sizeof _SEGGER_RTT;
 
     gpio_put(LED_PIN, 1);
 
@@ -551,7 +553,8 @@ int main() {
                     snprintf(str, sizeof str, "Writing uf2 to pico%s", picoconnection==2?" W":"");
                     logstr(str);
                     uf2_init(picoconnection-1); // setup file ready to flash.
-                    switch ( probe_flash_uf2() )
+                    int res = probe_flash_uf2();
+                    switch ( res )
                     {
                         case 1: logstr("flash complete");
                         logstr("booting board");
@@ -563,6 +566,7 @@ int main() {
                         break;
                         default:
                             logstr("flash failed");
+                            printf("flash failed %d\n", res);
                     }
                 } else
                 {
@@ -780,6 +784,7 @@ int main() {
 
                         default:
                             logstr("flash failed");
+                            printf("flash failed\n");
                     }
                 }
             }

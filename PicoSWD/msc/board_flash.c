@@ -113,12 +113,12 @@ uint32_t board_flash_size(void)
 void board_flash_read(uint32_t addr, void* buffer, uint32_t len, datatype_t area)
 {
   //printf("Read %s from %lu:%lu\n", header?"header":"data", addr, len);
-  addr = activefile->dataread + addr;
+  addr = (uint32_t)activefile->dataread + addr;
   switch ( area )
   {
-    case data: addr+=activefile->header; break;
-    case header: addr+=activefile->header-256; break;
-    case addresses: break;
+    case dataarea: addr+=activefile->header; break;
+    case headerarea: addr+=activefile->header-256; break;
+    case addressarea: break;
   }
   memcpy(buffer, (void*)addr, len);
 }
@@ -132,19 +132,19 @@ void board_flash_write(uint32_t addr, void const *buffer, uint32_t len, datatype
 {
   uint32_t block = addr >>12;
 
-  if ( area == data && block >= (activefile->storage >>12) ) 
+  if ( area == dataarea && block >= (activefile->storage >>12) ) 
   {
       printf("write data outside storage area %lu %08x!\n", block, addr);
       return;
   }
 
-  if ( area == addresses && block > 0 ) // >= ( activefile->header >> 12))
+  if ( area == addressarea && block > 0 ) // >= ( activefile->header >> 12))
   {
       printf("write address outside storage area %lu %08x!\n", block, addr);
       return;
   }
 
-  if ( area == header && block > 0 )
+  if ( area == headerarea && block > 0 )
   {
       printf("write header outside storage area %lu %08x!\n", block, addr);
       return;
@@ -152,14 +152,14 @@ void board_flash_write(uint32_t addr, void const *buffer, uint32_t len, datatype
 
   switch ( area )
   {
-    case data: 
+    case dataarea: 
       addr+=activefile->header;
       block+=activefile->header>>12;
       break;
-    case header:
+    case headerarea:
       addr+=activefile->header-256;
       break;
-    case addresses: // adjust address block write size to correct size.
+    case addressarea: // adjust address block write size to correct size.
       if ( len > activefile->header - 256 )
       {
         len = activefile->header - 256;
@@ -186,7 +186,7 @@ void board_flash_write(uint32_t addr, void const *buffer, uint32_t len, datatype
 
   printf("Write to %08x -> %08x %lu, block %d\n", addr, activefile->datawrite + addr, len, block);
   {
-    flash_range_program(activefile->datawrite + addr, buffer, header?len:256);
+    flash_range_program(activefile->datawrite + addr, buffer, headerarea?len:256);
   }
 }
 

@@ -101,7 +101,7 @@ typedef struct {
 
 typedef enum { none, booting, connected, connectednofs, connectedwithfs, notconnected, usbconnected, usbnotconnected } connectionstatus_t;
 
-typedef enum { data, addresses, header } datatype_t;
+typedef enum { dataarea, addressarea, headerarea } datatype_t;
 
 void drawstatus(connectionstatus_t status, const char * statusstr);
 void logstrmulti(const char * str, bool multiline);

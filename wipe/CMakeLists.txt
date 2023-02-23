@@ -31,5 +31,8 @@ pico_set_linker_script(wipe ${CMAKE_SOURCE_DIR}/memmap_no_flash_wipe.ld)
 
 target_compile_definitions(hardware_timer INTERFACE PICO_TIME_DEFAULT_ALARM_POOL_DISABLED=1)
 
-
+add_custom_command(TARGET wipe POST_BUILD
+    COMMAND xxd -n helper --include ${CMAKE_BINARY_DIR}/wipe.bin > ${CMAKE_SOURCE_DIR}/helper.h
+    COMMENT "Creating include file ${CMAKE_SOURCE_DIR}/helper.h"
+)
 

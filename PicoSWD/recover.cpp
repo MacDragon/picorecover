@@ -4,9 +4,9 @@
 
 extern "C" {
 #include "source.h"
-#include "SEGGER_RTT.h"
+//#include "SEGGER_RTT.h"
 #include "hardware/structs/systick.h"
-#include "pico_hal.h"
+#include "../wipe/littlefs-lib/pico_hal.h"
 #include "uf2.h"
 #include "../wipe/wipe.h"
 }

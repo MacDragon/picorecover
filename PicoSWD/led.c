@@ -26,7 +26,20 @@
 #include <pico/stdlib.h>
 #include <stdint.h>
 
-#include "picoprobe_config.h"
+//#include "picoprobe_config.h"
+
+// LED config
+#ifndef DEBUG_LED
+
+#ifndef PICO_DEFAULT_LED_PIN
+#error PICO_DEFAULT_LED_PIN is not defined, run PICOPROBE_LED=<led_pin> cmake
+#elif PICO_DEFAULT_LED_PIN == -1
+#error PICO_DEFAULT_LED_PIN is defined as -1, run PICOPROBE_LED=<led_pin> cmake
+#else
+#define DEBUG_LED PICO_DEFAULT_LED_PIN
+#endif
+
+#endif
 
 #define LED_COUNT_SHIFT 14
 #define LED_COUNT_MAX 5 * (1 << LED_COUNT_SHIFT)
@@ -36,9 +49,9 @@ static uint32_t led_count;
 void led_init(void) {
     led_count = 0;
 
-    gpio_init(PICOPROBE_LED);
-    gpio_set_dir(PICOPROBE_LED, GPIO_OUT);
-    gpio_put(PICOPROBE_LED, 1);
+    gpio_init(DEBUG_LED);
+    gpio_set_dir(DEBUG_LED, GPIO_OUT);
+    gpio_put(DEBUG_LED, 1);
 }
 
 
@@ -46,13 +59,13 @@ void led_init(void) {
 void led_task(void) {
     if (led_count != 0) {
         --led_count;
-        gpio_put(PICOPROBE_LED, !((led_count >> LED_COUNT_SHIFT) & 1));
+        gpio_put(DEBUG_LED, !((led_count >> LED_COUNT_SHIFT) & 1));
     }
 }
 
 void led_signal_activity(uint total_bits) {
     if (led_count == 0) {
-        gpio_put(PICOPROBE_LED, 0);
+        gpio_put(DEBUG_LED, 0);
     }
 
     if (led_count < LED_COUNT_MAX) {

@@ -314,7 +314,7 @@ void uf2_init(uint8_t file)
   _flash_size = board_flash_size();
 
   // read in possible header data.
-  board_flash_read(0, &headerdata, 4096, header);
+  board_flash_read(0, &headerdata, 4096, headerarea);
 
   if ( headerdata.shortname[0] != 0 && headerdata.shortname[0] != 0xff)
   {
@@ -573,7 +573,7 @@ bool uf2_get_uf2filename( uint8_t fileno, char *str, uint32_t strlen)
   headerdata_t headerdata;
   
   board_flash_init(fileno);
-  board_flash_read(0, &headerdata, sizeof headerdata, header);
+  board_flash_read(0, &headerdata, sizeof headerdata, headerarea);
 
   memset(str, 0, strlen);
 
@@ -630,9 +630,10 @@ bool uf2_get_uf2filename( uint8_t fileno, char *str, uint32_t strlen)
 
 uint32_t uf2_get_uf2blockcount(void)
 {
-  uint32_t blockcount = 0;
+  uint16_t blockcount = 0;
   printf("struct offset %d\n", offsetof(headerdata_t, blocks));
-  board_flash_read(4096*6+offsetof(headerdata_t, blocks), &blockcount, 4, true);
+
+  board_flash_read(offsetof(headerdata_t, blocks), &blockcount, 2, headerarea);
   if ( blockcount > 384*8 ) // max possible blocks.
     blockcount = 0;
   headerdata.blocks = blockcount;
@@ -653,14 +654,14 @@ void uf2_get_uf2block(uint32_t block_no, uint8_t *data)
       bl->blockNo = block_no;
       bl->numBlocks = headerdata.blocks; //UF2_SECTOR_COUNT;
       uint32_t targetaddr = 0;
-      board_flash_read(block_no*4, &targetaddr, 4, true);
+      board_flash_read(block_no*4, &targetaddr, 4, addressarea);
       //printf("block %d targetaddr %08x\n", block_no, targetaddr);
       bl->targetAddr = targetaddr;
       bl->payloadSize = UF2_FIRMWARE_BYTES_PER_SECTOR;
       bl->flags = UF2_FLAG_FAMILYID;
       bl->familyID = BOARD_UF2_FAMILY_ID;
 
-      board_flash_read(addr, bl->data, bl->payloadSize, false);
+      board_flash_read(addr, bl->data, bl->payloadSize, dataarea);
     }
 }
 
@@ -901,8 +902,8 @@ int uf2_write_header(void)
 {
     printf("Storing header data\n");
     headerdata.familyid = PICOFAMILYID;
-    board_flash_write(0, blockaddresses, sizeof blockaddresses, addresses);
-    board_flash_write(0, &headerdata, sizeof headerdata, header);
+    board_flash_write(0, blockaddresses, sizeof blockaddresses, addressarea);
+    board_flash_write(0, &headerdata, sizeof headerdata, headerarea);
     //wDumpHex(blockaddresses, 384);
 }
 
@@ -927,7 +928,7 @@ int uf2_write_block (uint32_t lbaaddr, uint8_t *buffer, WriteState *state)
     // generic family ID
 
     printf("Writing UF2 block %d/%d %dB target addr %08x\n", bl->blockNo+1, bl->numBlocks, bl->payloadSize, bl->targetAddr);
-    board_flash_write(bl->blockNo*256, bl->data, bl->payloadSize, data);
+    board_flash_write(bl->blockNo*256, bl->data, bl->payloadSize, dataarea);
 
     // also store address in header block
     blockaddresses[bl->blockNo] = bl->targetAddr;

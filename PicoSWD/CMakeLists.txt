@@ -1,13 +1,13 @@
 # What CMake to start at
 cmake_minimum_required(VERSION 3.12)
+
+#Include the subsidiary .cmake file to get the SDK
+include(pico_sdk_import.cmake)
  
 # Set the name and version of the project
 project(PicoSWD VERSION 1.0.0)
 
 include(pimoroni_pico_import.cmake)
-
-# Include the subsidiary .cmake file to get the SDK
-include(pico_sdk_import.cmake)
 
 # Gooey boilerplate
 project(${NAME} C CXX ASM)
@@ -15,17 +15,18 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
  
 # Link the Project to a source file (step 4.6)
-add_executable(PicoSWD source.cpp swd.cpp recover.cpp led.c)
+add_executable(PicoSWD source.cpp swd.cpp recover.cpp led.c stdio_rtt.c)
  
-add_subdirectory(littlefs-lib)
 add_subdirectory(msc)
+add_subdirectory(SEGGER_RTT/RTT)
 
 target_include_directories(PicoSWD PRIVATE ${../../wipe/})
 target_include_directories(PicoSWD PRIVATE .)
+target_include_directories(PicoSWD PRIVATE ./SEGGER_RTT/RTT/)
 
 # Link the Project to an extra library (pico_stdlib)
-target_link_libraries(PicoSWD pico_stdlib hardware_pio hardware_adc littlefs-lib tinyusb_device tinyusb_board hardware_spi hardware_pwm hardware_dma rgbled pico_display pico_graphics st7789 button)
-
+target_link_libraries(PicoSWD pico_stdlib hardware_pio hardware_adc tinyusb_device tinyusb_board hardware_spi hardware_pwm hardware_dma hardware_flash rgbled pico_display pico_graphics st7789 button)
+# pico_stdio_rtt
 # Initalise the SDK
 pico_sdk_init()
 
@@ -52,7 +53,5 @@ set(DBG_PIN_COUNT=4)
  
 # Enable extra outputs (SWD?)
 pico_add_extra_outputs(PicoSWD)
-
-pico_enable_stdio_rtt(PicoSWD 1)
 
 pico_set_linker_script(PicoSWD  ${CMAKE_SOURCE_DIR}/memmap_rtt.ld)

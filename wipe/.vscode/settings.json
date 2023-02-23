@@ -1,6 +1,7 @@
 {
     "cmake.environment": {
-        "PICO_SDK_PATH":"../../pico-sdk"
+        "PICO_SDK_PATH":"/Users/visa/Code/pico/pico-sdk",
+	"PIMORONI_PICO_PATH":"/Users/visa/Code/pico/pimoroni-pico"
     },
     "files.associations": {
         "segger_rtt.h": "c",
