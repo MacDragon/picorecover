@@ -314,7 +314,7 @@ resultcode probe_read_reg(bool dp, uint32_t reg, uint32_t * readval)
 
     if ( !ok && wait && !fault )
     {
-        printf("wait\n");
+        printf("waitr\n");
         return E_WAIT;
     }
 
@@ -407,7 +407,7 @@ resultcode probe_write_reg(bool dp, uint32_t reg, uint32_t writeval)
 
     if ( !ok && wait && !fault )
     {
-        printf("wait\n");
+        printf("waitw\n");
         return E_WAIT;
     }
 
@@ -460,7 +460,21 @@ bool probe_write_dp(uint32_t reg, uint32_t writeval)
 
 bool probe_write_ap(uint32_t reg, uint32_t writeval)
 {
-    return probe_write_reg(false, reg, writeval) == E_OK?true:false;
+    resultcode res = probe_write_reg(false, reg, writeval);
+
+    if ( res == E_OK)
+        return true;
+    else if ( res == E_WAIT )
+    {
+        // wait a bit for bus to hopefully clear
+        sleep_us(1000);
+        res = probe_write_reg(false, reg, writeval);
+        if ( res == E_OK)
+            return true;
+        printf("write resend failed\n");
+    }
+
+    return false;
 }
 
 /*
@@ -672,9 +686,53 @@ bool probe_write_memory( uint32_t addr, uint8_t *data, uint32_t count )
         //printf("TAR write %08x, %02x %02x %02x %02x\n", reg, reg&0xff, (reg>>8)&0xff, (reg>>16)&0xff, (reg>>24)&0xff);
         if ( ! probe_write_ap(ahbap_rw_DRW,reg) ) // * 256 to program 1kB
         {
-                printf("Write error 2 at %d\n", i);
-                return false;
+            printf("Write error 2 at %d\n", i);
+            return false;
         }
+    }
+
+    return true;
+}
+
+bool probe_write_memory_slow( uint32_t addr, uint8_t *data, uint32_t count )
+{
+    if ( addr & 0b11 )
+    {
+        printf("Bad address! %08x\n", addr);
+    }
+    //probe_write_ap(ahbap_rw_TAR, addr);
+    uint32_t writeval;
+    uint32_t reg;
+    for ( int i=0;i<count;i+=4)
+    {
+        if ( i % 256 == 0 )
+        {
+            //printf("TAR write at position %d to %08x\n", i, addr+i);
+            if (!probe_write_ap(ahbap_rw_TAR, addr+i))
+            {
+                printf("Write error at %d\n", i);
+                return false;
+            }
+        }
+        //reg = ((uint32_t*)data)[i];
+        reg = 0;
+        reg = data[i]; // crude way to write only as much as given even if not an evenly aligned amount.
+        if ( i+1 < count )
+            reg |= data[i+1] << 8;
+        if ( i+2 < count )
+            reg |= data[i+2] << 16;
+        if ( i+3 < count )
+            reg |= data[i+3] << 24;
+
+        //printf("TAR write %08x, %02x %02x %02x %02x\n", reg, reg&0xff, (reg>>8)&0xff, (reg>>16)&0xff, (reg>>24)&0xff);
+        if ( ! probe_write_ap(ahbap_rw_DRW,reg) ) // * 256 to program 1kB
+        {
+            printf("Write error 2 at %d\n", i);
+            return false;
+        }
+#ifdef DEBUGMSG
+        sleep_us(10); // with debug messages on, this seems to be needed, unsure why.
+#endif
     }
 
     return true;
@@ -912,11 +970,13 @@ write	AccessPort	DRW	0xBB	0xA05F0001
 }
 
 
-int32_t probe_send_instruction( uint8_t instruction )
+int32_t probe_send_instruction( uint8_t instruction, uint8_t instno )
 {
+    instruction_t cmd;
+    uint32_t instroffset = offsetof(shareddata_t, inst) + sizeof cmd*instno;
     // check current instruction field is 0, signifying 
     uint8_t ins[4] = {instruction};
-    if ( probe_write_memory(0x20038000+offsetof(shareddata_t, inst), ins, 4) )
+    if ( probe_write_memory(0x20038000+instroffset+offsetof(instruction_t, inst), ins, 4) )
         return true;
     return false;
     #if 0
@@ -925,7 +985,7 @@ int32_t probe_send_instruction( uint8_t instruction )
     while ( result == 0 && count < 10)
     {
         sleep_ms(20);
-        probe_read_memory( 0x20038000+offsetof(shareddata_t, inst), (uint8_t*)&result, sizeof result);
+        probe_read_memory( 0x20038000+instroffset+offsetof(instruction_t, inst), (uint8_t*)&result, sizeof result);
     }
 
     return result;
@@ -934,21 +994,26 @@ int32_t probe_send_instruction( uint8_t instruction )
 }
 
 
-int32_t probe_wait_reply( uint32_t timeout )
+int32_t probe_wait_reply( uint32_t timeout, uint8_t instno )
 {
     int32_t result = 0;
+    int32_t clear = 0;
     timeout = timeout*1000;
     uint32_t start = time_us_32();
+
+    instruction_t cmd;
+    uint32_t instroffset = offsetof(shareddata_t, inst) + sizeof cmd*instno;
+
     for ( int i=0;i<8;i++)
         probe_low();  // idle
     while ( result == 0 && time_us_32()-start < timeout )
     {
-        if ( !probe_read_memory( 0x20038000+offsetof(shareddata_t, res), (uint8_t*)&result, sizeof result) )
+        if ( !probe_read_memory( 0x20038000+instroffset+offsetof(instruction_t, res), (uint8_t*)&result, sizeof result) )
         {
-            printf("error reading address %08x\n", 0x20038000+offsetof(shareddata_t, res));
+            printf("error reading address %08x\n", 0x20038000+instroffset+offsetof(instruction_t, res));
             break;
         }
-        sleep_ms(1);
+        sleep_us(600); // smaller values lead to read fail which would require reinit of connection.
     }
 
     if ( result == 0 )

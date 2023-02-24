@@ -95,7 +95,7 @@ static void flash_start( void )
 
 shareddata_t exchange __attribute__((section(".shared")));
 
-int recoverfile( char * filename )
+int recoverfile( char * filename, instruction_t * cmd )
 {
     int res = 0;
     char filename1[32]="/boot.py";
@@ -110,8 +110,8 @@ int recoverfile( char * filename )
     int file = pico_open(filename1, 0);
     int file2 = pico_open(filename2, 0);
 
-    exchange.data[1] = file;
-    exchange.data[2] = file2;
+    cmd->data[1] = file;
+    cmd->data[2] = file2;
 
     if ( file > 0 ) pico_close(file); // only used to check if recovery exists.
 
@@ -163,6 +163,105 @@ void flasherror( void )
     }
 }
 
+bool filesystemok = false;
+
+int runinstruction(instruction_t * cmd)
+{
+    uint32_t current_inst = cmd->inst;
+    cmd->inst = 0;
+    cmd->res = 0;
+
+    switch ( current_inst )
+    {
+        case 1 : // boot.py recover
+            if ( !filesystemok )
+            {
+                flasherror();
+                cmd->res = -1; 
+            } else
+                cmd->res = recoverfile("boot", cmd);
+            break;
+        case 2 : // main.py recover
+            if ( !filesystemok )
+            {
+                flasherror();
+                cmd->res = -1; 
+            } else
+                cmd->res = recoverfile("main", cmd);
+            break;
+            break;
+        case 3 : // wipe filesystem area
+            uint flash_size_bytes;
+            #ifndef PICO_FLASH_SIZE_BYTES
+            #warning PICO_FLASH_SIZE_BYTES not set, assuming 16M
+                flash_size_bytes = 16 * 1024 * 1024;
+            #else
+                flash_size_bytes = MICROPY_HW_FLASH_STORAGE_BYTES;
+            #endif
+            flash_range_erase(MICROPY_HW_FLASH_STORAGE_BASE, flash_size_bytes);
+            cmd->res = 1;
+            break;
+        case 4 : 
+            // Pop back up as an MSD drive
+            cmd->res = 1;
+            busy_wait_ms(100);
+            reset_usb_boot(0, 0);
+            break;
+        case 5 :
+            flash_range_erase(0, 4096); // erase boot sector only.
+            cmd->res = 1;
+            break;
+        case 6 :
+        {
+            if ( cmd->addr < 0x10000000 || cmd->addr + cmd->size > 0x10000000 + 2048*1024 || cmd->size % 256 != 0 || cmd->addr % 256 != 0)
+            {
+                cmd->res = -3;
+            }
+
+            uint32_t addr = cmd->addr - 0x10000000;
+
+            // receive data.
+            if ( cmd->size > 1024 || cmd->size == 0 )
+                cmd->res = -2;
+            else 
+            {
+                uint32_t crc = crc32b(cmd->data, cmd->size);
+                if ( crc == cmd->crc )
+                {
+                    cmd->crc = ~crc;
+                    flash_range_program( addr, cmd->data, cmd->size);
+                    // write flash!
+                    cmd->res = 1;
+                }
+                else
+                {
+                    cmd->crc = ~crc;
+                    cmd->res = -1;
+                }
+            }
+            break;
+        }
+        case 7 :
+        {
+            if ( cmd->addr < 0x10000000 || cmd->addr + cmd->size > 0x10000000 + 2048*1024 || cmd->size % 4096 != 0 || cmd->addr % 4096 != 0)
+            {
+                cmd->res = -2;
+            }
+            uint32_t addr = cmd->addr - 0x10000000;
+            flash_range_erase(addr, cmd->size); // erase boot sector only.
+            cmd->res = 1;
+            break;
+        }
+        case 0xff :
+            gpio_put(PICO_DEFAULT_LED_PIN, 0);
+            busy_wait_ms(100);
+            gpio_put(PICO_DEFAULT_LED_PIN, 1);
+            busy_wait_ms(100);
+            cmd->res = 1;
+            break;
+    }
+}
+
 int main() {
     adc_init();
 
@@ -197,7 +296,8 @@ int main() {
 
     exchange.magic = 0;
 
-    memset(exchange.data, 0, sizeof exchange.data);
+    memset(exchange.inst[0].data, 0, sizeof exchange.inst[0].data);
+    memset(exchange.inst[1].data, 0, sizeof exchange.inst[1].data);
 
     // check for and run boot2 if it exists in flash?
 
@@ -207,120 +307,33 @@ int main() {
 
     // W25Q16JV
 
-    exchange.inst = 0;
+    exchange.inst[0].inst = 0;
+    exchange.inst[1].inst = 0;
 
-    bool filesystemok = false;
+    filesystemok = false;
 
     int res = pico_mount(false);
 
     if ( res == LFS_ERR_OK)
     {
-        exchange.res = 0xab | adcval << 16 | ( picoversion << 8 ); // flag that filesystem was found.
+        exchange.inst[0].res = 0xab | adcval << 16 | ( picoversion << 8 ); // flag that filesystem was found.
         filesystemok = true;
     } else
     {
         //flasherror();
-        exchange.res = abs(res) | adcval << 16 | ( picoversion << 8 );
+        exchange.inst[0].res = abs(res) | adcval << 16 | ( picoversion << 8 );
     }
 
     while ( 1 )
     {
         exchange.magic = 0xDEADBEEF;
-        if ( exchange.inst != 0 )
+        if ( exchange.inst[0].inst != 0 )
         {
-            uint32_t current_inst = exchange.inst;
-            exchange.inst = 0;
-            exchange.res = 0;
-
-            switch ( current_inst )
-            {
-                case 1 : // boot.py recover
-                    if ( !filesystemok )
-                    {
-                        flasherror();
-                        exchange.res = -1; 
-                    } else
-                        exchange.res = recoverfile("boot");
-                    break;
-                case 2 : // main.py recover
-                    if ( !filesystemok )
-                    {
-                        flasherror();
-                        exchange.res = -1; 
-                    } else
-                        exchange.res = recoverfile("main");
-                    break;
-                    break;
-                case 3 : // wipe filesystem area
-                    uint flash_size_bytes;
-                    #ifndef PICO_FLASH_SIZE_BYTES
-                    #warning PICO_FLASH_SIZE_BYTES not set, assuming 16M
-                        flash_size_bytes = 16 * 1024 * 1024;
-                    #else
-                        flash_size_bytes = MICROPY_HW_FLASH_STORAGE_BYTES;
-                    #endif
-                    flash_range_erase(MICROPY_HW_FLASH_STORAGE_BASE, flash_size_bytes);
-                    exchange.res = 1;
-                    break;
-                case 4 : 
-                    // Pop back up as an MSD drive
-                    exchange.res = 1;
-                    busy_wait_ms(100);
-                    reset_usb_boot(0, 0);
-                    break;
-                case 5 :
-                    flash_range_erase(0, 4096); // erase boot sector only.
-                    exchange.res = 1;
-                    break;
-                case 6 :
-                {
-                    if ( exchange.addr < 0x10000000 || exchange.addr + exchange.size > 0x10000000 + 2048*1024 || exchange.size % 256 != 0 || exchange.addr % 256 != 0)
-                    {
-                        exchange.res = -3;
-                    }
-
-                    uint32_t addr = exchange.addr - 0x10000000;
-
-                    // receive data.
-                    if ( exchange.size > 1024 || exchange.size == 0 )
-                        exchange.res = -2;
-                    else 
-                    {
-                        uint32_t crc = crc32b(exchange.data, exchange.size);
-                        if ( crc == exchange.crc )
-                        {
-                            exchange.crc = ~crc;
-                            flash_range_program( addr, exchange.data, exchange.size);
-                            // write flash!
-                            exchange.res = 1;
-                        }
-                        else
-                        {
-                            exchange.crc = ~crc;
-                            exchange.res = -1;
-                        }
-                    }
-                    break;
-                }
-                case 7 :
-                {
-                    if ( exchange.addr < 0x10000000 || exchange.addr + exchange.size > 0x10000000 + 2048*1024 || exchange.size % 4096 != 0 || exchange.addr % 4096 != 0)
-                    {
-                        exchange.res = -2;
-                    }
-                    uint32_t addr = exchange.addr - 0x10000000;
-                    flash_range_erase(addr, exchange.size); // erase boot sector only.
-                    exchange.res = 1;
-                    break;
-                }
-                case 0xff :
-                    gpio_put(PICO_DEFAULT_LED_PIN, 0);
-                    busy_wait_ms(100);
-                    gpio_put(PICO_DEFAULT_LED_PIN, 1);
-                    busy_wait_ms(100);
-                    exchange.res = 1;
-                    break;
-            }
+            runinstruction(&exchange.inst[0]);
+        }
+        if ( exchange.inst[1].inst != 0 )
+        {
+            runinstruction(&exchange.inst[1]);
         }
     }
 }

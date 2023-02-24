@@ -22,14 +22,18 @@ static_assert(MICROPY_HW_FLASH_STORAGE_BYTES % 4096 == 0, "Flash storage size mu
 #define MICROPYW_HW_FLASH_STORAGE_BASE (PICO_FLASH_SIZE_BYTES - MICROPYW_HW_FLASH_STORAGE_BYTES)
 #endif
 
-typedef struct shareddata {
-    uint32_t magic;
+typedef struct {
     uint32_t inst;
     int32_t res;
     uint32_t addr;
     uint32_t size;
     uint32_t crc;
     uint8_t data[1024*4]; // 1kB buffer. Max for one write sequence?
+} instruction_t;
+
+typedef struct shareddata {
+    uint32_t magic;
+    instruction_t inst[2];
 } shareddata_t;
 
 // EOF

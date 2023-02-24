@@ -42,21 +42,24 @@ Button button_x(PicoDisplay::X);
 Button button_y(PicoDisplay::Y);
 
 uint32_t crc32b(unsigned char *data, uint32_t size) {
-   int i, j;
-   unsigned int byte, crc, mask;
+    int i, j;
+    unsigned int byte, crc, mask;
 
-   i = 0;
-   crc = 0xFFFFFFFF;
-   while (i < size) {
-      byte = data[i];            // Get next byte.
-      crc = crc ^ byte;
-      for (j = 7; j >= 0; j--) {    // Do eight times.
-         mask = -(crc & 1);
-         crc = (crc >> 1) ^ (0xEDB88320 & mask);
-      }
-      i = i + 1;
-   }
-   return ~crc;
+    if ( data == NULL )
+        return 0;
+
+    i = 0;
+    crc = 0xFFFFFFFF;
+    while (i < size) {
+        byte = data[i];            // Get next byte.
+        crc = crc ^ byte;
+        for (j = 7; j >= 0; j--) {    // Do eight times.
+            mask = -(crc & 1);
+            crc = (crc >> 1) ^ (0xEDB88320 & mask);
+        }
+        i = i + 1;
+    }
+    return ~crc;
 }
 
 bool streql( const char * str1, const char * str2 )
@@ -244,7 +247,7 @@ void openconnection(void)
     if ( probe_sendhelper() )
     {
         int32_t result = 0;
-        probe_read_memory( 0x20038000+offsetof(shareddata_t, res), (uint8_t*)&result, sizeof result);
+        probe_read_memory( 0x20038000+offsetof(shareddata_t, inst[0])+offsetof(instruction_t, res), (uint8_t*)&result, sizeof result);
         printf("Helper uploaded, checking state: %08x -> ", result);
         
         switch ( ( abs(result) & 0xf00 ) >> 8 )
@@ -297,7 +300,7 @@ int main() {
 #warning requires a board with a regular LED
 #else
     set_sys_clock_khz(250000, true); //250mhz seems to work
-    stdio_init_all();
+    //stdio_init_all();
     stdio_rtt_init();
 
     SEGGER_RTT_Init();
@@ -457,7 +460,7 @@ int main() {
         if ( interlockclosed && curtick > lastseen + 1000*1000 ) // every second of not doing something check if pico still there.
         {
             int32_t result = 0;
-            if ( picoconnection && probe_read_memory( 0x20038000+offsetof(shareddata_t, data), (uint8_t*)&result, sizeof result) )
+            if ( picoconnection && probe_read_memory( 0x20038000+offsetof(shareddata_t, inst[0])+offsetof(instruction_t, data), (uint8_t*)&result, sizeof result) )
             {
                 lastseen = time_us_32();
                 drawstatus(connected, "");
@@ -503,19 +506,22 @@ int main() {
                 shownchoices = true;
                 if ( filesystem )
                 {
+                    drawstatus(connectedwithfs, "Recovering");
+                    sleep_ms(200);
                     printf("boot.py recovery\n");
                     logstr("boot.py recovery");
-                    probe_send_instruction(1);
+                    probe_send_instruction(1,0);
                     int32_t res;
                     char str[32];
                     sleep_ms(20);
+                    bool recovered = false;
                     printf("recovery wait\n");
-                    res = probe_wait_reply(5000);
+                    res = probe_wait_reply(5000, 0);
                     switch ( res )
                     {
-                        case 1 : logstr("boot.py renamed"); break;
-                        case 2 : logstr("boot.py deleted"); break;
-                        case -1 : logstr("boot.py error recovering"); break;
+                        case 1 : logstr("boot.py renamed"); drawstatus(connectedwithfs, "Recovered"); recovered = true; break;
+                        case 2 : logstr("boot.py deleted"); drawstatus(connectedwithfs, "Recovered"); recovered = true; break;
+                        case -1 : logstr("boot.py error recovering"); drawstatus(connectedwithfs, "Recovery Err"); break;
                         case -2 : logstr("boot.py not found"); break;
                         default :
                         snprintf(str, 32, "unknown res %d", res);
@@ -524,23 +530,30 @@ int main() {
 
                     printf("main.py recovery\n");
                     logstr("main.py recovery");
-                    probe_send_instruction(2);
+                    probe_send_instruction(2,0);
                     sleep_ms(20);
                     printf("recovery wait\n");
-                    res = probe_wait_reply(5000);
+                    res = probe_wait_reply(5000,0);
                     switch ( res )
                     {
-                        case 1 : logstr("main.py renamed"); break;
-                        case 2 : logstr("main.py deleted"); break;
-                        case -1 : logstr("main.py error recovering"); break;
+                        case 1 : logstr("main.py renamed"); drawstatus(connectedwithfs, "Recovered"); recovered = true; break;
+                        case 2 : logstr("main.py deleted"); drawstatus(connectedwithfs, "Recovered"); recovered = true; break;
+                        case -1 : logstr("main.py error recovering"); drawstatus(connectedwithfs, "Recovery Err"); break;
                         case -2 : logstr("main.py not found"); break;
                         default :
                         snprintf(str, 32, "unknown res %d", res);
                         logstr(str);
                     }
+
+                    if ( !recovered )
+                    {
+                        drawstatus(connectedwithfs, "Recovery N/A");
+                        sleep_ms(500);
+                    }
                 } else
                 {
                     logstr("no FS to recover");
+                    drawstatus(connectedwithfs, "No FS to recover");
                 }
             }
 
@@ -577,11 +590,12 @@ int main() {
             if(button_x.read())
             {
                 printf("clearing file area\n");
+                drawstatus(connected, "Clearing FS");
                 logstr("clearing file area");
-                probe_send_instruction(3);
+                probe_send_instruction(3,0);
                 sleep_ms(20);
                 printf("recovery wait\n");
-                int32_t res = probe_wait_reply(20000);
+                int32_t res = probe_wait_reply(20000,0);
                 switch ( res )
                 {
                     case 1 : logstr("file area erased"); break;
@@ -812,9 +826,9 @@ int main() {
                     if ( filesystem )
                     {
                         printf("boot.py recovery\n");
-                        probe_send_instruction(1);
+                        probe_send_instruction(1,0);
                         //sleep_ms(20);
-                        int32_t res = probe_wait_reply(5000);
+                        int32_t res = probe_wait_reply(5000,0);
                         printf("result %d\n", res);
                     } else
                     {
@@ -825,9 +839,9 @@ int main() {
                     if ( filesystem )
                     {
                         printf("main.py recovery\n");
-                        probe_send_instruction(2);
+                        probe_send_instruction(2,0);
                         sleep_ms(20);
-                        int32_t res = probe_wait_reply(5000);
+                        int32_t res = probe_wait_reply(5000,0);
                         printf("result %d\n", res);
                     } else
                     {
@@ -838,9 +852,9 @@ int main() {
                     if ( filesystem )
                     {
                         printf("clearing file area\n");
-                        probe_send_instruction(3);
+                        probe_send_instruction(3,0);
                         sleep_ms(20);
-                        int32_t res = probe_wait_reply(20000);
+                        int32_t res = probe_wait_reply(20000,0);
                         printf("result %d\n", res);
                     } else
                     {
@@ -854,9 +868,9 @@ int main() {
 
                     probe_write_memory(0x20038000+offsetof(shareddata_t, addr), (uint8_t*)&lowaddr, 4);
                     probe_write_memory(0x20038000+offsetof(shareddata_t, size), (uint8_t*)&erasesize, 4);
-                    probe_send_instruction(7);
+                    probe_send_instruction(7,0);
                     uint32_t start = time_us_32();
-                    int32_t res = probe_wait_reply(20000); // erase could take a while.
+                    int32_t res = probe_wait_reply(20000,0); // erase could take a while.
 
                     if ( res != 1 )
                     {
@@ -868,7 +882,7 @@ int main() {
                 } else if ( streql(tkn1, "usb" ) )
                 {
                     printf("usb load requested\n");
-                    probe_send_instruction(4);
+                    probe_send_instruction(4,0);
                     picoconnection = false;
                     drawstatus(notconnected, "");
                 } else 
@@ -883,7 +897,7 @@ int main() {
                 if ( streql(tkn1, "blink" ) )
                 {
                     printf("Blink\n");
-                    probe_send_instruction(0xff);
+                    probe_send_instruction(0xff,0);
                 } else if ( streql(tkn1, "connect" ) )
                 {
                     openconnection();

@@ -112,21 +112,28 @@ uint32_t board_flash_size(void)
 
 void board_flash_read(uint32_t addr, void* buffer, uint32_t len, datatype_t area)
 {
-  //printf("Read %s from %lu:%lu\n", header?"header":"data", addr, len);
-  addr = (uint32_t)activefile->dataread + addr;
+  char * areatype;
+  uint32_t addrint = (uint32_t)activefile->dataread + addr;
   switch ( area )
   {
-    case dataarea: addr+=activefile->header; break;
-    case headerarea: addr+=activefile->header-256; break;
-    case addressarea: break;
+    case dataarea: addrint+=activefile->header; areatype = "data"; break;
+    case headerarea: addrint+=activefile->header-256;  areatype = "header"; break;
+    case addressarea: areatype = "address"; break;
   }
-  memcpy(buffer, (void*)addr, len);
+  memcpy(buffer, (void*)addrint, len);
+
+#ifdef DEBUGMSG
+  uint32_t crc = crc32b(buffer, len);
+  printf("Read %s from %08x:%lu addrin %08x crc %08x\n", areatype, addrint, len, addr, crc);
+#endif
 }
 
 void board_flash_flush(void)
 {
   //na, nothing cashed.
 }
+
+uint8_t tempdata[4096*4] = {0};
 
 void board_flash_write(uint32_t addr, void const *buffer, uint32_t len, datatype_t area)
 {
@@ -180,14 +187,29 @@ void board_flash_write(uint32_t addr, void const *buffer, uint32_t len, datatype
 
     uint32_t eraseaddr = activefile->datawrite + 4096*block;
     printf("erasing block %d before write at %08x\n", block, eraseaddr);
+    
+    if ( block == 0 )
+    {
+      volatile int i=0;
+    }
+    
     erased[block] = true;
     flash_range_erase(eraseaddr, 4096);
   }
 
-  printf("Write to %08x -> %08x %lu, block %d\n", addr, activefile->datawrite + addr, len, block);
-  {
-    flash_range_program(activefile->datawrite + addr, buffer, headerarea?len:256);
-  }
+  uint32_t crc1=crc32b(buffer, headerarea?len:256);
+
+  flash_range_program(activefile->datawrite + addr, buffer, headerarea?len:256);
+  
+#ifdef DEBUGMSG
+  uint32_t addrread = activefile->dataread + addr;
+
+  if ( len < 4096*4 )
+    memcpy(tempdata, (void*)addrread, headerarea?len:256);
+
+  uint32_t crc2=crc32b(tempdata, headerarea?len:256);
+  printf("Write to %08x -> %08x %lu, block %d crc in %08x read %08x\n", addr, activefile->datawrite + addr, len, block, crc1, crc2);
+#endif
 }
 
 void board_flash_erase_app(void)

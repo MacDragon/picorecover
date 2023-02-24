@@ -926,8 +926,10 @@ int uf2_write_block (uint32_t lbaaddr, uint8_t *buffer, WriteState *state)
   if (bl->familyID == BOARD_UF2_FAMILY_ID)
   {
     // generic family ID
-
-    printf("Writing UF2 block %d/%d %dB target addr %08x\n", bl->blockNo+1, bl->numBlocks, bl->payloadSize, bl->targetAddr);
+#ifdef DEBUGMSG
+    uint32_t crc = crc32b(bl->data, bl->payloadSize);
+    printf("Writing UF2 block %d/%d %dB target addr %08x crc %08x\n", bl->blockNo+1, bl->numBlocks, bl->payloadSize, bl->targetAddr, crc);
+#endif
     board_flash_write(bl->blockNo*256, bl->data, bl->payloadSize, dataarea);
 
     // also store address in header block
