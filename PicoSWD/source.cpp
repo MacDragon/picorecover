@@ -11,6 +11,7 @@ extern "C" {
 #include "../wipe/littlefs-lib/pico_hal.h"
 #include "uf2.h"
 #include "../wipe/wipe.h"
+#include "hardware/watchdog.h"
 }
 #include "pico_display.hpp"
 #include "drivers/st7789/st7789.hpp"
@@ -293,6 +294,11 @@ void openconnection(void)
     sleep_ms(200);
     gpio_put(LED_PIN, 1);
 #endif
+}
+
+void __attribute__((noreturn)) _exit(__unused int status)
+{
+    watchdog_reboot(0, 0, 0);
 }
 
 int main() {
@@ -924,4 +930,7 @@ int main() {
         #endif
     }
 #endif
+
+// if somehow end up here, reboot.
+    watchdog_reboot(0, 0, 0);
 }

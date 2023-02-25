@@ -52,7 +52,7 @@
 #define FLASH_FILE1HEADERBYTES    (FLASH_HEADER1BLOCKS*4096)
 #define FLASH_FILE1BYTES ((FLASH_STORAGE1BLOCKS+FLASH_HEADER1BLOCKS)*4096)
 
-#define FLASH_STORAGE2BLOCKS (290)
+#define FLASH_STORAGE2BLOCKS (288)
 #define FLASH_HEADER2BLOCKS (5)
 #define FLASH_FILE2STORAGEBYTES (FLASH_STORAGE2BLOCKS*4096)
 #define FLASH_FILE2HEADERBYTES    (FLASH_HEADER2BLOCKS*4096)
@@ -187,11 +187,6 @@ void board_flash_write(uint32_t addr, void const *buffer, uint32_t len, datatype
 
     uint32_t eraseaddr = activefile->datawrite + 4096*block;
     printf("erasing block %d before write at %08x\n", block, eraseaddr);
-    
-    if ( block == 0 )
-    {
-      volatile int i=0;
-    }
     
     erased[block] = true;
     flash_range_erase(eraseaddr, 4096);
