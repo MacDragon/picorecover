@@ -279,7 +279,6 @@ void openconnection(void)
         {
             printf("No filesystem\n");
             filesystem = false;
-
             drawstatus(connectednofs, "");
         }
 
@@ -299,6 +298,7 @@ void openconnection(void)
 void __attribute__((noreturn)) _exit(__unused int status)
 {
     watchdog_reboot(0, 0, 0);
+    while ( 1 );
 }
 
 int main() {
@@ -568,6 +568,8 @@ int main() {
                 shownchoices = true;
                 if ( gotfile[picoconnection-1] )
                 {
+                    drawstatus(filesystem?connectedwithfs:connected, picoconnection==2?"Flash Pico W":"Flash Pico");
+                    sleep_ms(500);
                     char str[32];
                     snprintf(str, sizeof str, "Writing uf2 to pico%s", picoconnection==2?" W":"");
                     logstr(str);
@@ -589,6 +591,7 @@ int main() {
                     }
                 } else
                 {
+                    drawstatus(filesystem?connectedwithfs:connected, picoconnection==2?"No Pico W UF2":"No Pico UF2");
                     logstr("no uf2 to flash");
                 }
             }
@@ -596,7 +599,7 @@ int main() {
             if(button_x.read())
             {
                 printf("clearing file area\n");
-                drawstatus(connected, "Clearing FS");
+                drawstatus(filesystem?connectedwithfs:connected, "Clearing FS area");
                 logstr("clearing file area");
                 probe_send_instruction(3,0);
                 sleep_ms(20);
