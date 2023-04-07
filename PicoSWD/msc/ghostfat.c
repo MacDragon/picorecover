@@ -336,7 +336,7 @@ void uf2_init(uint8_t file)
   {
     // update CURRENT.UF2 file size
     info[FID_UF2].size = 0;//UF2_BYTE_COUNT;
-    memcpy(info[0].name, "NODATA     ", 11);
+    memcpy(info[FID_UF2].name, "NODATA     ", 11);
   }
 
   init_starting_clusters();
