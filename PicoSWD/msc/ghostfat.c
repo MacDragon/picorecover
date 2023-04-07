@@ -316,6 +316,11 @@ void uf2_init(uint8_t file)
   // read in possible header data.
   board_flash_read(0, &headerdata, 4096, headerarea);
 
+  if ( file == 0 )
+    memcpy(info[0].name, "PICO    TXT", 11);
+  else
+    memcpy(info[0].name, "PICO_W  TXT", 11);
+
   if ( headerdata.shortname[0] != 0 && headerdata.shortname[0] != 0xff)
   {
     // we have a header!
@@ -331,6 +336,7 @@ void uf2_init(uint8_t file)
   {
     // update CURRENT.UF2 file size
     info[FID_UF2].size = 0;//UF2_BYTE_COUNT;
+    memcpy(info[0].name, "NODATA     ", 11);
   }
 
   init_starting_clusters();
