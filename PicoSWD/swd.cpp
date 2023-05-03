@@ -434,7 +434,7 @@ resultcode probe_write_reg(bool dp, uint32_t reg, uint32_t writeval)
             probe_low();
 
         for ( int i=0;i<8;i++)
-            probe_low();  // idle
+            probe_low();  // idle to ensure data is clocked out, could be omitted if immiedietly sending another command.
         return E_OK;
     } else
         printf("error: %d %d %d\n", ok, wait, fault); 

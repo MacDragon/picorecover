@@ -1,6 +1,5 @@
 #include <string.h>
 #include <ctype.h>
-#include "ring_buffer.hpp"
 
 extern "C" {
 #include "source.h"

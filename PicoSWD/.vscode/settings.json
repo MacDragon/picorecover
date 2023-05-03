@@ -21,7 +21,9 @@
         "utility": "c",
         "string": "c",
         "typeinfo": "c",
-        "pico_display.hpp": "c"
+        "pico_display.hpp": "c",
+        "board_api.h": "c",
+        "resets.h": "c"
     },
 }
 

@@ -312,6 +312,8 @@ int main() {
 
     filesystemok = false;
 
+    pico_setw(picoversion==2?true:false);
+
     int res = pico_mount(false);
 
     if ( res == LFS_ERR_OK)

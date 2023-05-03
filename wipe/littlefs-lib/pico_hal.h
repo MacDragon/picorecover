@@ -34,6 +34,10 @@ struct pico_fsstat_t {
     lfs_size_t blocks_used;
 };
 
+
+// set file system location depending on device type.
+void pico_hal_setw( bool w );
+
 // Mounts a littlefs
 //
 // Requires a littlefs object and config struct. Optionally formats

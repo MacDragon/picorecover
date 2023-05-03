@@ -23,6 +23,7 @@
 
 // micropython flash storage size
 #define FS_SIZE (1408 * 1024)
+#define FS_SIZE_W (848 * 1024) // W has a smaller file system due to wifi firmware/libraries.
 
 static int pico_hal_read(lfs_block_t block, lfs_off_t off, void* buffer, lfs_size_t size);
 static int pico_hal_prog(lfs_block_t block, lfs_off_t off, const void* buffer, lfs_size_t size);
@@ -54,7 +55,21 @@ struct lfs_config pico_cfg = {
 // Pico specific hardware abstraction functions
 
 // file system offset in flash
-const char* FS_BASE = (char*)(PICO_FLASH_SIZE_BYTES - FS_SIZE);
+char* FS_BASE = (char*)(PICO_FLASH_SIZE_BYTES - FS_SIZE);
+
+void pico_setw( bool w )
+{
+    if ( w )
+    {
+        FS_BASE = (char*)(PICO_FLASH_SIZE_BYTES - FS_SIZE_W);
+        pico_cfg.block_count = FS_SIZE_W / FLASH_SECTOR_SIZE;
+    }
+    else
+    {
+        FS_BASE = (char*)(PICO_FLASH_SIZE_BYTES - FS_SIZE);
+        pico_cfg.block_count = FS_SIZE / FLASH_SECTOR_SIZE;
+    }
+}
 
 static int pico_hal_read(lfs_block_t block, lfs_off_t off, void* buffer, lfs_size_t size) {
     assert(block < pico_cfg.block_count);
