@@ -40,6 +40,7 @@
 
 #include "boot2.h"
 
+int picoversion = 1;
 
 // https://web.archive.org/web/20190108202303/http://www.hackersdelight.org/hdcodetxt/crc.c.txt
 
@@ -192,13 +193,23 @@ int runinstruction(instruction_t * cmd)
             break;
         case 3 : // wipe filesystem area
             uint flash_size_bytes;
+            uint flash_storage_base;
             #ifndef PICO_FLASH_SIZE_BYTES
             #warning PICO_FLASH_SIZE_BYTES not set, assuming 16M
                 flash_size_bytes = 16 * 1024 * 1024;
             #else
+            if ( picoversion == 2 )
+            {
+                flash_size_bytes = MICROPYW_HW_FLASH_STORAGE_BYTES;
+                flash_storage_base = MICROPYW_HW_FLASH_STORAGE_BASE;
+            }
+            else
+            {
                 flash_size_bytes = MICROPY_HW_FLASH_STORAGE_BYTES;
+                flash_storage_base = MICROPY_HW_FLASH_STORAGE_BASE;
+            }
             #endif
-            flash_range_erase(MICROPY_HW_FLASH_STORAGE_BASE, flash_size_bytes);
+            flash_range_erase(flash_storage_base, flash_size_bytes);
             cmd->res = 1;
             break;
         case 4 : 
@@ -211,7 +222,7 @@ int runinstruction(instruction_t * cmd)
             flash_range_erase(0, 4096); // erase boot sector only.
             cmd->res = 1;
             break;
-        case 6 :
+        case 6 : // write block
         {
             if ( cmd->addr < 0x10000000 || cmd->addr + cmd->size > 0x10000000 + 2048*1024 || cmd->size % 256 != 0 || cmd->addr % 256 != 0)
             {
@@ -241,14 +252,14 @@ int runinstruction(instruction_t * cmd)
             }
             break;
         }
-        case 7 :
+        case 7 : // erase block
         {
             if ( cmd->addr < 0x10000000 || cmd->addr + cmd->size > 0x10000000 + 2048*1024 || cmd->size % 4096 != 0 || cmd->addr % 4096 != 0)
             {
                 cmd->res = -2;
             }
             uint32_t addr = cmd->addr - 0x10000000;
-            flash_range_erase(addr, cmd->size); // erase boot sector only.
+            flash_range_erase(addr, cmd->size);
             cmd->res = 1;
             break;
         }
@@ -272,8 +283,6 @@ int main() {
     // detect pico version here.
 
     flash_start();
-
-    int picoversion = 1;
 
 // https://forums.raspberrypi.com/viewtopic.php?t=336775
     #define VSYS_ADC_GPIO  29
