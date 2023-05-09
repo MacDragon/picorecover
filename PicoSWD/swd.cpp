@@ -605,6 +605,7 @@ bool probe_rescue_reset( void )
 
         uint32_t reg;
 
+        // request debug unit enable
         if ( probe_write_dp(swdpreg_rw_CSR, 1 << 28) )
         {
             printf("Written reset\n"); 

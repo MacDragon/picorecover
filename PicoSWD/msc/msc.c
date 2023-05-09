@@ -143,6 +143,7 @@ void DumpHex(const void* data, size_t size) {
 	char ascii[17];
 	size_t i, j;
 	ascii[16] = '\0';
+  int lines = 0;
 	for (i = 0; i < size; ++i) {
 		printf("%02X ", ((unsigned char*)data)[i]);
 		if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
@@ -154,6 +155,12 @@ void DumpHex(const void* data, size_t size) {
 			printf(" ");
 			if ((i+1) % 16 == 0) {
 				printf("|  %s \n", ascii);
+        lines++;
+        if ( lines == 2 )
+        {
+          lines = 0;
+          sleep_ms(1);
+        }
 			} else if (i+1 == size) {
 				ascii[(i+1) % 16] = '\0';
 				if ((i+1) % 16 <= 8) {
@@ -246,8 +253,6 @@ void tud_msc_write10_complete_cb(uint8_t lun)
       #endif
 
       printf("uf2 write complete\n");
-
-      tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3A, 0x00);
       //indicator_set(STATE_WRITING_FINISHED);
       //board_dfu_complete();
 
@@ -258,6 +263,9 @@ void tud_msc_write10_complete_cb(uint8_t lun)
 
       // store the header data so we have valid data in storage.
       uf2_write_header();
+
+      tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3A, 0x00);
+
       closeusb = true;
       //while(1) {} // crashes after close.
 

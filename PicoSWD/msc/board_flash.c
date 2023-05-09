@@ -180,31 +180,42 @@ void board_flash_write(uint32_t addr, void const *buffer, uint32_t len, datatype
     // else, if quite, data is still intact.
     if ( !firsterased )
     {
-      printf("erasing metadata storage\n");
+      printf("erasing metadata storage %08x of %d\n", activefile->datawrite, activefile->header);
+      uint32_t ints = save_and_disable_interrupts();
       flash_range_erase(activefile->datawrite, activefile->header);
+      restore_interrupts (ints);
       firsterased = true;
+      for ( int i=0;i<(activefile->header/4096);i++)
+      {
+        printf("erasing block %d\n", i);
+        erased[i] = true; 
+      }
     }
 
     uint32_t eraseaddr = activefile->datawrite + 4096*block;
     printf("erasing block %d before write at %08x\n", block, eraseaddr);
     
     erased[block] = true;
+    uint32_t ints = save_and_disable_interrupts();
     flash_range_erase(eraseaddr, 4096);
+    restore_interrupts (ints);
   }
 
   uint32_t crc1=crc32b(buffer, headerarea?len:256);
 
+  uint32_t ints = save_and_disable_interrupts();
   flash_range_program(activefile->datawrite + addr, buffer, headerarea?len:256);
-  
-#ifdef DEBUGMSG
+  restore_interrupts (ints);
+
   uint32_t addrread = activefile->dataread + addr;
 
   if ( len < 4096*4 )
     memcpy(tempdata, (void*)addrread, headerarea?len:256);
 
   uint32_t crc2=crc32b(tempdata, headerarea?len:256);
-  printf("Write to %08x -> %08x %lu, block %d crc in %08x read %08x\n", addr, activefile->datawrite + addr, len, block, crc1, crc2);
-#endif
+  if ( crc1 != crc2 )
+      printf("Write to %08x -> %08x %lu, block %d crc in %08x read %08x\n", addr, activefile->datawrite + addr, len, block, crc1, crc2);
+
 }
 
 void board_flash_erase_app(void)

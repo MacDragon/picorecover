@@ -184,9 +184,12 @@ static FileContent_t info[] = {
     {.name = "NODATA     ", .content = NULL       , .size = 0                       },
 };
 
-uint32_t blockaddresses[((384*4096)/256)]; // size has to be multiple of 256
+#ifdef CRCCHECK
+uint32_t blockcrc[((288*4096)/256)]; // size has to be multiple of 256
+#endif
+uint32_t blockaddresses[((288*4096)/256)]; // size has to be multiple of 256
 typedef union {
-  uint8_t writeblock[4096]; // make the structure be 4k
+  uint8_t writeblock[256]; // make the structure be 256 bytes.
   struct {
     char shortname[11];
     char longname[234];
@@ -314,7 +317,7 @@ void uf2_init(uint8_t file)
   _flash_size = board_flash_size();
 
   // read in possible header data.
-  board_flash_read(0, &headerdata, 4096, headerarea);
+  board_flash_read(0, &headerdata, sizeof headerdata, headerarea);
 
   if ( file == 0 )
     memcpy(info[0].name, "PICO    TXT", 11);
@@ -668,6 +671,17 @@ void uf2_get_uf2block(uint32_t block_no, uint8_t *data)
       bl->familyID = BOARD_UF2_FAMILY_ID;
 
       board_flash_read(addr, bl->data, bl->payloadSize, dataarea);
+
+      uint32_t crc = crc32b(bl->data, bl->payloadSize);
+#ifdef DEBUGMSG
+#ifdef CRCCHECK
+  if ( crc != blockcrc[block_no] && blockcrc[block_no] != 0)
+      printf("Reading UF2 block %d/%d %dB target addr %08x crc mismatch %08x %08x\n", bl->blockNo+1, bl->numBlocks, bl->payloadSize, bl->targetAddr, blockcrc[block_no], crc);
+#else
+      printf("Reading UF2 block %d/%d %dB target addr %08x crc %08x\n", bl->blockNo+1, bl->numBlocks, bl->payloadSize, bl->targetAddr, crc);
+#endif
+#endif
+
     }
 }
 
@@ -906,9 +920,10 @@ void uf2_read_fsblock (uint32_t block_no, uint8_t *data)
 
 int uf2_write_header(void)
 {
-    printf("Storing header data\n");
+    printf("Storing address data\n");
     headerdata.familyid = PICOFAMILYID;
     board_flash_write(0, blockaddresses, sizeof blockaddresses, addressarea);
+    printf("Storing header data\n");
     board_flash_write(0, &headerdata, sizeof headerdata, headerarea);
     //wDumpHex(blockaddresses, 384);
 }
@@ -932,14 +947,16 @@ int uf2_write_block (uint32_t lbaaddr, uint8_t *buffer, WriteState *state)
   if (bl->familyID == BOARD_UF2_FAMILY_ID)
   {
     // generic family ID
-#ifdef DEBUGMSG
     uint32_t crc = crc32b(bl->data, bl->payloadSize);
+#ifdef DEBUGMSG
     printf("Writing UF2 block %d/%d %dB target addr %08x crc %08x\n", bl->blockNo+1, bl->numBlocks, bl->payloadSize, bl->targetAddr, crc);
 #endif
     board_flash_write(bl->blockNo*256, bl->data, bl->payloadSize, dataarea);
-
     // also store address in header block
     blockaddresses[bl->blockNo] = bl->targetAddr;
+#ifdef CRCCHECK
+    blockcrc[bl->blockNo] = crc;
+#endif
   }else
   {
     // TODO family matches VID/PID
@@ -984,7 +1001,7 @@ int uf2_write_block (uint32_t lbaaddr, uint8_t *buffer, WriteState *state)
           drawstatus(usbconnected, str);
         } else if ( state->numBlocks == state->numWritten)
         {
-           drawstatus(usbconnected, "usb load 100%%");
+          drawstatus(usbconnected, "usb load 100%%");
         }
 
       }

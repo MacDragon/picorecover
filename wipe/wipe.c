@@ -132,6 +132,7 @@ int recoverfile( char * filename, instruction_t * cmd )
             {
                // printf("boot.py couldn't be renamed, deleting\n");
                 delete = true;
+                res = -3;
                 // rename failed, just delete the file instead.
             } else
                 res = 1;
@@ -189,7 +190,6 @@ int runinstruction(instruction_t * cmd)
                 cmd->res = -1; 
             } else
                 cmd->res = recoverfile("main", cmd);
-            break;
             break;
         case 3 : // wipe filesystem area
             uint flash_size_bytes;
